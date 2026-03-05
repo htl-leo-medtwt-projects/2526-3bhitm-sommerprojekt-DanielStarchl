@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Work till retirement</title>
+    <script src="https://cdn.babylonjs.com/babylon.js"></script>
+    <script src="https://cdn.babylonjs.com/loaders/babylonjs.loaders.min.js"></script>
+    <script src="./js/babylon.js" defer></script>
+</head>
+<body>
+    <div id="pop">
+    Hold [E]
+</div>
+    <div id="application"><img id="applyimg" src="./Assets/app.png" alt="application"></div>
+    <div onclick="TheBeginning()" id="apply"><p id="end">Apply</p></div>
+        <div id="hair"></div>
+        <div id="money"><img src="./Assets/money.png" alt="money"><h2 id="balance">Balance: </h2></div>
+        <div onclick="TheEnd()" id="retire"><p id="end">Retire (-20$)</p></div>
+    
+
+    <div id="fridge">
+        <div id="fridge2">
+            <img onclick="closeFridge()" id="snowflake" src="./Assets/snowflak.png" alt="">
+            <div id="food">
+                <div onclick="spawnSausage()" class="food-item"><img style="width: 100%; height: 100%; object-fit: cover; border-radius: 10px;" src="./Assets/sausage.webp" alt=""></div>
+                <div onclick="spawnCoke()" class="food-item"><img style="width: 100%; height: 100%; object-fit: cover; border-radius: 10px;" src="./Assets/coke.webp" alt=""></div>
+            </div>
+        </div>
+    </div>
+    <canvas id="renderCanvas" touch-action="none"></canvas>
+    <style>
+        html, body{
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            margin: 0;
+            padding: 0;
+        }
+        #renderCanvas{
+            width: 100%;
+            height: 100%;
+            touch-action: none;
+        }
+
+        #pop{
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-family: sans-serif;
+            font-size: 24px;
+            color: white;
+            background: rgba(0,0,0,0.6);
+            padding: 12px 20px;
+            border-radius: 8px;
+            display: none;
+            z-index: 999;
+        }
+
+        #fridge{
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.5);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        #end{
+            color: white;
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+            font-size: 20px;
+            align-self: center;
+            margin-bottom: 10px;
+        }
+
+        #fridge2{
+            position: relative;
+            border-radius: 20px;
+            border: 2px rgb(167, 162, 162) solid;
+            width: 500px;
+            height: 500px;
+            background: rgba(45, 43, 43, 0.966);
+            justify-self: center;
+            align-self: center;
+        }
+
+        #snowflake{
+            position: absolute;
+            right: -50px;
+            top: -50px;
+            width: 100px;
+            height: 100px;
+            object-fit: cover;
+        }
+
+        .food-item {
+            width: 60px;
+            height: 60px;
+            border: 2px rgb(167, 162, 162) solid;
+            background-color: rgb(255, 255, 255);
+            border-radius: 10px;
+            margin: 10px;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+        }
+
+        #food{
+            height: 100%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        #application{
+            width: 100%;
+            position: fixed;
+            display: flex;
+            justify-content: center;
+        }
+
+        #application img{
+            width: 500px;
+            height: 700px;
+        }
+
+     
+
+        #hair{
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            width: 10px;
+            height: 10px;
+            color: rgb(255, 74, 74);
+            background-color: rgb(70, 70, 70);
+            border-radius: 50%;
+            border: 2px solid rgb(255, 74, 74);
+        }
+
+        #money{
+            align-content: center;
+            display: flex;
+            position: fixed;
+            top: 10px;
+            left: 10px;
+            border: 2px rgb(167, 162, 162) solid;
+            width: 300px;
+            height: 40px;
+            background: rgba(45, 43, 43, 0.966);
+            border-radius: 20px;
+        }
+        #retire{
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            top: 100px;
+            position: fixed;
+            left: 10px;
+            border: 2px rgb(167, 162, 162) solid;
+            width: 200px;
+            height: 40px;
+            background: rgba(66, 120, 96, 0.966);
+            border-radius: 20px;
+        }
+
+        #apply{
+             display: flex;
+            justify-content: center;
+            justify-self: center;
+            align-items: center;
+            bottom: 10px;
+            position: fixed;
+            left: 50%;
+            border: 2px rgb(167, 162, 162) solid;
+            width: 200px;
+            height: 40px;
+            background: rgba(66, 120, 96, 0.966);
+            border-radius: 20px;
+        }
+
+
+        #money img{
+            margin-left: 20px;
+            align-self: center;
+            width: 30px;
+            height: 30px;
+            object-fit: cover;
+            border-radius: 10px;
+        }
+
+        #money h2{
+            color: white;
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+            font-size: 20px;
+            margin-left: 10px;
+            align-self: center;
+        }
+    </style>
+    <script>
+        function closeFridge() {
+        document.getElementById("fridge").style.display = "none";
+        opeen = false;
+    }
+        function TheBeginning() {
+            document.getElementById("application").style.display = "none";
+            document.getElementById("apply").style.display = "none";
+        }
+        
+        function TheEnd() {
+            if (balance >= 20) {
+                balance -= 20;
+                document.getElementById("balance").innerText = `Balance: ${balance}`;
+                document.getElementById("applyimg").src = "./Assets/retired.webp";
+                document.getElementById("application").style.display = "block";
+            }
+        }
+    </script>
+</body>
+</html>
