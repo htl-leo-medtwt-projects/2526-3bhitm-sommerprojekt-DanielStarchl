@@ -26,9 +26,19 @@ class SceneManager {
         CAMERA.keysRotateRight[0] = 39;
         CAMERA.keysRotateUp[0] = 3;
         CAMERA.keysRotateDown[0] = 3;
+        const pipeline = new BABYLON.DefaultRenderingPipeline("pipeline", true, s, [CAMERA]);
+        pipeline.imageProcessingEnabled = true;
+        pipeline.imageProcessing.vignetteEnabled = false;
+        pipeline.imageProcessing.exposure = 1;
+        pipeline.imageProcessing.contrast = 1;
+        pipeline.imageProcessing.colorCurvesEnabled = true;
+        const sun = new BABYLON.DirectionalLight("sun", new BABYLON.Vector3(-1, -2, -1), s);
+        sun.position = new BABYLON.Vector3(20, 100, 20);
+        sun.intensity = 2.5;
+        sun.diffuse = new BABYLON.Color3(1, 1, 0.9);
         const hemi = new BABYLON.HemisphericLight('hemi', new BABYLON.Vector3(0, 1, 0.5), s);
-        hemi.intensity = 0.5;
-        s.clearColor = new BABYLON.Color4(.2, .1, .3);
+        hemi.intensity = 3;
+        s.clearColor = new BABYLON.Color4(0.4, 0.7, 1, 1);
         return s;
     }
     static run(scene, engine) {
@@ -63,32 +73,26 @@ class SceneManager {
         z.color = new BABYLON.Color3(0, 0, 1);
     }
     static createMap(scene) {
-        let city;
-        BABYLON.SceneLoader.ImportMesh("", "Assets/", "CityMap.gltf", scene, (meshes) => {
-            console.log("map meshes", meshes);
-            city = meshes;
-            city[0].scaling.scaleInPlace(1);
-            city[0].position = new BABYLON.Vector3(0, 0, 0);
-            city[0].checkCollisions = true;
-            city.forEach(mesh => {
-                mesh.checkCollisions = true;
-            });
-            const boundingInfo = city[0].getBoundingInfo();
-            const center = boundingInfo.boundingBox.centerWorld;
-            const size = boundingInfo.boundingBox.extendSizeWorld;
-            console.log(city);
-            console.log("Hello7");
-            console.log("Size:", size);
-            if (size.x === 0 && size.y === 0 && size.z === 0) {
-                console.log("Bounding box is zero, using fallback camera");
-                camera.position = new BABYLON.Vector3(50, 50, 50);
-                camera.setTarget(new BABYLON.Vector3(0, 0, 0));
-            }
-            else {
-                const maxDim = Math.max(size.x, size.y, size.z);
-                camera.position = center.add(new BABYLON.Vector3(maxDim * 2, maxDim * 1.5, maxDim * 2));
-                camera.setTarget(center);
-                camera.maxZ = maxDim * 10;
+        BABYLON.SceneLoader.ImportMesh("", "Assets/", "BrokenBonesMapV2.gltf", scene, (meshes) => {
+            const allMeshes = meshes.filter(m => m instanceof BABYLON.Mesh);
+            const mergedCity = BABYLON.Mesh.MergeMeshes(allMeshes, true, true, undefined, false, true);
+            if (mergedCity) {
+                mergedCity.name = "OptimizedMap";
+                mergedCity.checkCollisions = true;
+                mergedCity.freezeWorldMatrix();
+                const boundingInfo = mergedCity.getBoundingInfo();
+                const center = boundingInfo.boundingBox.centerWorld;
+                const size = boundingInfo.boundingBox.extendSizeWorld;
+                if (size.x === 0 && size.y === 0 && size.z === 0) {
+                    camera.position = new BABYLON.Vector3(50, 50, 50);
+                    camera.setTarget(new BABYLON.Vector3(0, 0, 0));
+                }
+                else {
+                    const maxDim = Math.max(size.x, size.y, size.z);
+                    camera.position = center.add(new BABYLON.Vector3(maxDim * 2, maxDim * 1.5, maxDim * 2));
+                    camera.setTarget(center);
+                    camera.maxZ = maxDim * 10;
+                }
             }
         });
     }
@@ -104,14 +108,14 @@ window.addEventListener("keydown", (e) => {
     if (e.shiftKey && e.key.toLowerCase() === "p") {
         flightMode = !flightMode;
         if (flightMode) {
-            console.log("✈️ Flugmodus aktiviert");
+            console.log("Flugmodus aktiviert");
             scene.gravity = new BABYLON.Vector3(0, 0, 0);
             camera.applyGravity = false;
             camera.needMoveForGravity = false;
-            camera.speed = 2;
+            camera.speed = 10;
         }
         else {
-            console.log("👟 Normaler Modus");
+            console.log("Normaler Modus");
             scene.gravity = new BABYLON.Vector3(0, -3.81, 0);
             camera.applyGravity = true;
             camera.needMoveForGravity = true;
