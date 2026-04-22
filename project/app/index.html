@@ -9,27 +9,114 @@
     <script src="./js/babylon.js" defer></script>
 </head>
 <body>
-    <div id="pop">
-    Hold [E]
-</div>
-    <div id="application"><img id="applyimg" src="./Assets/app.png" alt="application"></div>
-    <div onclick="TheBeginning()" id="apply"><p id="end">Apply</p></div>
-        <div id="hair"></div>
-        <div id="money"><img src="./Assets/money.png" alt="money"><h2 id="balance">Balance: </h2></div>
-        <div onclick="TheEnd()" id="retire"><p id="end">Retire (-20$)</p></div>
-    
 
-    <div id="fridge">
-        <div id="fridge2">
-            <img onclick="closeFridge()" id="snowflake" src="./Assets/snowflak.png" alt="">
-            <div id="food">
-                <div onclick="spawnSausage()" class="food-item"><img style="width: 100%; height: 100%; object-fit: cover; border-radius: 10px;" src="./Assets/sausage.webp" alt=""></div>
-                <div onclick="spawnCoke()" class="food-item"><img style="width: 100%; height: 100%; object-fit: cover; border-radius: 10px;" src="./Assets/coke.webp" alt=""></div>
-            </div>
+    <div id="login" class="page-frame">
+    <form action="auth.php" method="POST">
+        <div style="display: grid; grid-template-columns: auto;">
+        <input class="input-field" type="text" name="username" placeholder="Name" required>
+        <input class="input-field" type="password" name="password" placeholder="Passwort" required>
         </div>
+    <button class="action-button" onclick="TheBeginning()" type="submit">Spielen</button>
     </div>
+    <div id="frames-left">
+        <div>
+         <img class="icon" src="./Assets/indexIcon.png" alt="indexIcon">
+         <h1 class="title">Index</h1>
+        </div>
+        <div>
+        <img class="icon" src="./Assets/shopIcon.png" alt="indexIcon">
+         <h1 class="title">Shop</h1>
+        </div>
+        <div>
+        <img class="icon" src="./Assets/rebirthIcon.png" alt="indexIcon">
+         <h1 class="title">Rebirth</h1>
+        </div>
+        
+        </div>
+</form>
+
     <canvas id="renderCanvas" touch-action="none"></canvas>
     <style>
+
+        .title{
+            font-family: system-ui;
+            margin-top: -28px;
+            margin-left: 13px;
+            font-size: 30px;
+            font-weight:900;
+            color: white;
+  -webkit-text-stroke: 2px black;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+        }
+
+        #frames-left{
+            display: flex;
+            background: rgba(0, 0, 0, 0);
+            position: fixed;
+            flex-direction: column;
+            top: 50%;
+            transform: translate(0,-50%);
+            width: 50%;
+        }
+
+        #frames-left img{
+            width: 100px;
+        }
+
+        .page-frame {
+            position: fixed;
+
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 50%;
+            
+            max-width: 400px;;
+            background: rgba(0, 0, 0, 0.75);
+            border: 5px solid #000;
+            border-radius: 12px;
+            padding: 30px;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            
+        }
+
+        .icon {
+            transition: transform 0.05s ease-in-out;
+        }
+
+        .icon:hover {
+            transform: rotate(10deg) translateX(10px);
+            transition: transform 0.05s ease-in-out;
+        }
+
+        .input-field {
+            background: rgba(255, 255, 255, 0.1);
+            border: 3px solid #000;
+            border-radius: 8px;
+            padding: 12px;
+            color: white;
+            font-weight: bold;
+        }
+
+        .action-button {
+
+            display: flex;
+            justify-self: center;
+            align-self: center;;
+            background: #55ff55;
+            border: 3px solid #000;
+            border-radius: 8px;
+            padding: 15px;
+            color: white;
+            font-weight: 900;
+            text-transform: uppercase;
+            cursor: pointer;
+        }
+
         html, body{
             width: 100%;
             height: 100%;
@@ -205,7 +292,7 @@
         opeen = false;
     }
         function TheBeginning() {
-            document.getElementById("application").style.display = "none";
+            document.getElementById("login").style.display = "none";
             document.getElementById("apply").style.display = "none";
         }
         
