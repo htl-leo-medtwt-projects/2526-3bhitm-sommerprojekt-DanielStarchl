@@ -1,3 +1,76 @@
+<?php
+session_start();
+require_once 'database.php';
+
+$message = '';
+$hideLogin = false;
+$isLoggedIn = isset($_SESSION['player']);
+$currentUser = $isLoggedIn ? ($_SESSION['player']['name'] ?? '') : '';
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    $task = $_POST['task'] ?? $_POST['auth_action'] ?? 'login';
+
+    if ($task === 'logout') {
+        session_unset();
+        session_destroy();
+        session_start();
+        $message = 'Logout success';
+        $isLoggedIn = false;
+        $currentUser = '';
+        $hideLogin = false;
+    } else {
+        $user = trim($_POST['username'] ?? '');
+        $pass = trim($_POST['password'] ?? '');
+
+        if ($user === '' || $pass === '') {
+            $message = 'Bitte Benutzername und Passwort eingeben.';
+        } else {
+            if ($task === 'register') {
+                $stmt = $conn->prepare('SELECT player_id FROM PlayerState WHERE name = ?');
+                $stmt->bind_param('s', $user);
+                $stmt->execute();
+                $stmt->store_result();
+
+                if ($stmt->num_rows > 0) {
+                    $message = 'Benutzername bereits vergeben.';
+                } else {
+                    $stmt->close();
+                    $stmt = $conn->prepare('INSERT INTO PlayerState (name, password, rebirths, health, isAlive) VALUES (?, ?, 0, 100, 1)');
+                    $stmt->bind_param('ss', $user, $pass);
+
+                    if ($stmt->execute()) {
+                        $_SESSION['player'] = ['name' => $user];
+                        $currentUser = $user;
+                        $isLoggedIn = true;
+                        $message = 'Registrierung erfolgreich. Du bist jetzt angemeldet.';
+                        $hideLogin = true;
+                    } else {
+                        $message = 'Registrierung fehlgeschlagen.';
+                    }
+                }
+
+                $stmt->close();
+            } else {
+                $stmt = $conn->prepare('SELECT * FROM PlayerState WHERE name = ? AND password = ?');
+                $stmt->bind_param('ss', $user, $pass);
+                $stmt->execute();
+                $result = $stmt->get_result();
+
+                if ($result && $result->num_rows > 0) {
+                    $_SESSION['player'] = $result->fetch_assoc();
+                    $currentUser = $user;
+                    $isLoggedIn = true;
+                    $message = 'Login erfolgreich. Willkommen ' . htmlspecialchars($user) . '!';
+                    $hideLogin = true;
+                } else {
+                    $message = 'Falsche Anmeldedaten.';
+                }
+                $stmt->close();
+            }
+        }
+    }
+}
+?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -10,13 +83,27 @@
 </head>
 <body>
 
-    <div id="login" class="page-frame">
-    <form action="auth.php" method="POST">
+    <?php if ($isLoggedIn): ?>
+    <form id="logout-form" action="" method="POST" style="position: fixed; top: 20px; right: 20px; z-index: 1000;">
+        <input type="hidden" name="task" value="logout">
+        <button id="logout-button" type="submit">Abmelden</button>
+    </form>
+    <?php endif; ?>
+
+    <div id="login" class="page-frame" style="<?php echo ($hideLogin || $isLoggedIn) ? 'display:none;' : ''; ?>">
+    <form id="auth-form" action="" method="POST">
         <div style="display: grid; grid-template-columns: auto;">
-        <input class="input-field" type="text" name="username" placeholder="Name" required>
-        <input class="input-field" type="password" name="password" placeholder="Passwort" required>
+            <input class="input-field" type="text" name="username" placeholder="Name" required>
+            <input class="input-field" type="password" name="password" placeholder="Passwort" required>
         </div>
-    <button class="action-button" onclick="TheBeginning()" type="submit">Spielen</button>
+        <div style="display: flex; gap: 10px; justify-content: center;">
+            <button class="action-button" type="submit" name="auth_action" value="login">Anmelden</button>
+            <button class="action-button" type="submit" name="auth_action" value="register">Registrieren</button>
+        </div>
+        <div id="message" style="color: white; text-align: center; font-size: 14px; margin-top: 10px;">
+            <?php echo htmlspecialchars($message); ?>
+        </div>
+    </form>
     </div>
     <div id="frames-left">
         <div>
@@ -33,7 +120,6 @@
         </div>
         
         </div>
-</form>
 
     <canvas id="renderCanvas" touch-action="none"></canvas>
     <style>
@@ -81,7 +167,7 @@
             display: flex;
             flex-direction: column;
             gap: 15px;
-            
+            z-index: 1001;
         }
 
         .icon {
@@ -117,6 +203,26 @@
             cursor: pointer;
         }
 
+        #logout-button {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            min-width: 120px;
+            background: #d62828;
+            border: 3px solid #000;
+            border-radius: 12px;
+            padding: 12px 18px;
+            color: white;
+            font-weight: 900;
+            text-transform: uppercase;
+            cursor: pointer;
+            box-shadow: 0 6px 14px rgba(0, 0, 0, 0.3);
+        }
+
+        #logout-button:hover {
+            background: #b32020;
+        }
+
         html, body{
             width: 100%;
             height: 100%;
@@ -128,6 +234,7 @@
             width: 100%;
             height: 100%;
             touch-action: none;
+            pointer-events: none;
         }
 
         #pop{
