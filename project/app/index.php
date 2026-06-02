@@ -58,44 +58,58 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     } else {
         $user = trim($_POST['username'] ?? '');
         $pass = trim($_POST['password'] ?? '');
+        $confirmPass = trim($_POST['confirm_password'] ?? '');
 
-        if ($user === '' || $pass === '') {
+        if ($user === '' || $pass === '' || ($task === 'register' && $confirmPass === '')) {
             $message = 'Bitte Benutzername und Passwort eingeben.';
         } else {
             if ($task === 'register') {
-                $stmt = $conn->prepare('SELECT player_id FROM PlayerState WHERE name = ?');
+                if ($pass !== $confirmPass) {
+                    $message = 'Passwörter stimmen nicht überein.';
+                } else {
+                    $stmt = $conn->prepare('SELECT player_id FROM PlayerState WHERE name = ?');
+                    $stmt->bind_param('s', $user);
+                    $stmt->execute();
+                    $stmt->store_result();
+
+                    if ($stmt->num_rows > 0) {
+                        $message = 'Benutzername bereits vergeben.';
+                    } else {
+                        $stmt->close();
+                        $passwordHash = password_hash($pass, PASSWORD_DEFAULT);
+                        $stmt = $conn->prepare('INSERT INTO PlayerState (name, password, rebirths, health, isAlive, score) VALUES (?, ?, 0, 100, 1, 0)');
+                        $stmt->bind_param('ss', $user, $passwordHash);
+
+                        if ($stmt->execute()) {
+                            $_SESSION['player'] = ['name' => $user];
+                            $currentUser = $user;
+                            $isLoggedIn = true;
+                            $message = 'Registrierung erfolgreich. Du bist jetzt angemeldet.';
+                            $hideLogin = true;
+                            header("Location: " . $_SERVER['PHP_SELF']);
+                            exit;
+                        } else {
+                            $message = 'Registrierung fehlgeschlagen.';
+                        }
+                    }
+                    $stmt->close();
+                }
+            } else {
+                $stmt = $conn->prepare('SELECT * FROM PlayerState WHERE name = ?');
                 $stmt->bind_param('s', $user);
                 $stmt->execute();
-                $stmt->store_result();
-
-                if ($stmt->num_rows > 0) {
-                    $message = 'Benutzername bereits vergeben.';
-                } else {
-                    $stmt->close();
-                    $stmt = $conn->prepare('INSERT INTO PlayerState (name, password, rebirths, health, isAlive, score) VALUES (?, ?, 0, 100, 1, 0)');
-                    $stmt->bind_param('ss', $user, $pass);
-
-                    if ($stmt->execute()) {
-                        $_SESSION['player'] = ['name' => $user];
-                        $currentUser = $user;
-                        $isLoggedIn = true;
-                        $message = 'Registrierung erfolgreich. Du bist jetzt angemeldet.';
-                        $hideLogin = true;
-                        header("Location: " . $_SERVER['PHP_SELF']);
-                        exit;
-                    } else {
-                        $message = 'Registrierung fehlgeschlagen.';
-                    }
-                }
-                $stmt->close();
-            } else {
-                $stmt = $conn->prepare('SELECT * FROM PlayerState WHERE name = ? AND password = ?');
-                $stmt->bind_param('ss', $user, $pass);
-                $stmt->execute();
                 $result = $stmt->get_result();
+                $row = $result ? $result->fetch_assoc() : null;
 
-                if ($result && $result->num_rows > 0) {
-                    $_SESSION['player'] = $result->fetch_assoc();
+                if ($row && (password_verify($pass, $row['password']) || $pass === $row['password'])) {
+                    if (!password_verify($pass, $row['password'])) {
+                        $newHash = password_hash($pass, PASSWORD_DEFAULT);
+                        $updateStmt = $conn->prepare('UPDATE PlayerState SET password = ? WHERE name = ?');
+                        $updateStmt->bind_param('ss', $newHash, $user);
+                        $updateStmt->execute();
+                        $updateStmt->close();
+                    }
+                    $_SESSION['player'] = ['name' => $user];
                     $currentUser = $user;
                     $isLoggedIn = true;
                     $message = 'Login erfolgreich. Willkommen ' . htmlspecialchars($user) . '!';
@@ -186,12 +200,13 @@ $progressPercent = min(100, max(0, ($playerData['score'] / $rebirthCost) * 100))
     <div id="login" class="page-frame" style="<?php echo ($hideLogin || $isLoggedIn) ? 'display:none;' : ''; ?>">
     <form id="auth-form" action="" method="POST">
         <div style="display: grid; grid-template-columns: auto;">
-            <input class="input-field" type="text" name="username" placeholder="Name" required>
-            <input class="input-field" type="password" name="password" placeholder="Passwort" required>
+            <input class="input-field" type="text" name="username" placeholder="Name" required autocomplete="username">
+            <input class="input-field" id="password-field" type="password" name="password" placeholder="Passwort" required autocomplete="current-password">
+            <input class="input-field hidden" id="confirm-password" type="password" name="confirm_password" placeholder="Passwort wiederholen" autocomplete="new-password">
         </div>
         <div style="display: flex; gap: 10px; justify-content: center;">
-            <button class="action-button" type="submit" name="auth_action" value="login">Anmelden</button>
-            <button class="action-button" type="submit" name="auth_action" value="register">Registrieren</button>
+            <button id="login-button" class="action-button" type="submit" name="auth_action" value="login">Anmelden</button>
+            <button id="register-button" class="action-button" type="submit" name="auth_action" value="register">Registrieren</button>
         </div>
         <div id="message" style="color: white; text-align: center; font-size: 14px; margin-top: 10px;">
             <?php echo htmlspecialchars($message); ?>
@@ -745,8 +760,66 @@ $progressPercent = min(100, max(0, ($playerData['score'] / $rebirthCost) * 100))
             cursor: not-allowed;
             opacity: 0.6;
         }
+
+        .hidden {
+            display: none;
+        }
     </style>
     <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const authForm = document.getElementById('auth-form');
+            const passwordField = document.getElementById('password-field');
+            const confirmPasswordField = document.getElementById('confirm-password');
+            const loginButton = document.getElementById('login-button');
+            const registerButton = document.getElementById('register-button');
+            const messageDiv = document.getElementById('message');
+
+            function showRegisterMode() {
+                confirmPasswordField.classList.remove('hidden');
+                confirmPasswordField.required = true;
+            }
+
+            function showLoginMode() {
+                confirmPasswordField.classList.add('hidden');
+                confirmPasswordField.required = false;
+                confirmPasswordField.value = '';
+            }
+
+            loginButton.addEventListener('click', showLoginMode);
+            registerButton.addEventListener('click', showRegisterMode);
+
+            authForm.addEventListener('submit', function(evt) {
+                const action = evt.submitter ? evt.submitter.value : 'login';
+
+                if (action === 'register') {
+                    if (passwordField.value.trim() === '' || confirmPasswordField.value.trim() === '') {
+                        messageDiv.textContent = 'Bitte Passwort und Bestätigung eingeben.';
+                        evt.preventDefault();
+                        return;
+                    }
+
+                    if (passwordField.value !== confirmPasswordField.value) {
+                        messageDiv.textContent = 'Passwörter stimmen nicht überein.';
+                        evt.preventDefault();
+                        return;
+                    }
+                }
+
+                const confirmationText = action === 'register'
+                    ? 'Möchtest du dich wirklich registrieren?'
+                    : 'Möchtest du dich wirklich anmelden?';
+
+                evt.preventDefault();
+                showConfirm(confirmationText).then(confirmed => {
+                    if (confirmed) {
+                        authForm.submit();
+                    }
+                });
+            });
+
+            showLoginMode();
+        });
+
         function toggleFrame(frameId) {
             const indexFrame = document.getElementById('index-frame');
             const shopFrame = document.getElementById('shop-frame');
@@ -763,6 +836,66 @@ $progressPercent = min(100, max(0, ($playerData['score'] / $rebirthCost) * 100))
                 targetFrame.style.display = 'flex';
             }
         }
+    </script>
+    
+    <!-- Styled Modal Dialog -->
+    <div id="modal-overlay" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.7); z-index: 2000; align-items: center; justify-content: center;">
+        <div id="modal-dialog" style="background: rgba(0, 0, 0, 0.9); border: 3px solid #000; border-radius: 12px; padding: 30px; max-width: 400px; text-align: center; box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);">
+            <div id="modal-message" style="color: white; font-size: 18px; margin-bottom: 25px; font-family: system-ui;"></div>
+            <div id="modal-buttons" style="display: flex; gap: 15px; justify-content: center;">
+                <button id="modal-btn-primary" style="background: #55ff55; border: 3px solid #000; border-radius: 8px; padding: 12px 24px; color: white; font-weight: 900; cursor: pointer; min-width: 100px; text-transform: uppercase;">OK</button>
+                <button id="modal-btn-secondary" style="background: #ff5555; border: 3px solid #000; border-radius: 8px; padding: 12px 24px; color: white; font-weight: 900; cursor: pointer; min-width: 100px; text-transform: uppercase; display: none;">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Modal Dialog System
+        window.showAlert = function(message) {
+            return new Promise((resolve) => {
+                const overlay = document.getElementById('modal-overlay');
+                const msgDiv = document.getElementById('modal-message');
+                const primaryBtn = document.getElementById('modal-btn-primary');
+                const secondaryBtn = document.getElementById('modal-btn-secondary');
+                
+                msgDiv.textContent = message;
+                primaryBtn.textContent = 'OK';
+                secondaryBtn.style.display = 'none';
+                
+                primaryBtn.onclick = () => {
+                    overlay.style.display = 'none';
+                    resolve(true);
+                };
+                
+                overlay.style.display = 'flex';
+            });
+        };
+
+        window.showConfirm = function(message) {
+            return new Promise((resolve) => {
+                const overlay = document.getElementById('modal-overlay');
+                const msgDiv = document.getElementById('modal-message');
+                const primaryBtn = document.getElementById('modal-btn-primary');
+                const secondaryBtn = document.getElementById('modal-btn-secondary');
+                
+                msgDiv.textContent = message;
+                primaryBtn.textContent = 'Ja';
+                secondaryBtn.textContent = 'Nein';
+                secondaryBtn.style.display = 'block';
+                
+                primaryBtn.onclick = () => {
+                    overlay.style.display = 'none';
+                    resolve(true);
+                };
+                
+                secondaryBtn.onclick = () => {
+                    overlay.style.display = 'none';
+                    resolve(false);
+                };
+                
+                overlay.style.display = 'flex';
+            });
+        };
     </script>
     <script>
         (function(){
@@ -785,7 +918,7 @@ $progressPercent = min(100, max(0, ($playerData['score'] / $rebirthCost) * 100))
 
             upgradeMoneyBtn?.addEventListener('click', async ()=>{
                 const cost = 100;
-                if (balance < cost) { alert('Nicht genug Geld'); return; }
+                if (balance < cost) { await showAlert('Nicht genug Geld'); return; }
                 const fd = new FormData(); fd.append('action','buy_upgrade'); fd.append('type','money'); fd.append('cost', String(cost));
                 const res = await fetch('./main.php', {method:'POST', body:fd});
                 const data = await res.json();
@@ -794,15 +927,15 @@ $progressPercent = min(100, max(0, ($playerData['score'] / $rebirthCost) * 100))
                     localStorage.setItem('moneyMultiplier', String(data.moneyMultiplier));
                     if (moneyMultEl) moneyMultEl.innerText = String(data.moneyMultiplier);
                     if (overallMultEl && data.overallMultiplier) overallMultEl.innerText = String(data.overallMultiplier);
-                    alert('Money multiplier upgraded to ' + data.moneyMultiplier);
+                    await showAlert('Money multiplier upgraded to ' + data.moneyMultiplier);
                 } else {
-                    alert('Fehler beim Upgrade: ' + (data.error || 'unknown'));
+                    await showAlert('Fehler beim Upgrade: ' + (data.error || 'unknown'));
                 }
             });
 
             upgradeSpeedBtn?.addEventListener('click', async ()=>{
                 const cost = 100;
-                if (balance < cost) { alert('Nicht genug Geld'); return; }
+                if (balance < cost) { await showAlert('Nicht genug Geld'); return; }
                 const fd = new FormData(); fd.append('action','buy_upgrade'); fd.append('type','speed'); fd.append('cost', String(cost));
                 const res = await fetch('./main.php', {method:'POST', body:fd});
                 const data = await res.json();
@@ -811,14 +944,15 @@ $progressPercent = min(100, max(0, ($playerData['score'] / $rebirthCost) * 100))
                     localStorage.setItem('speedMultiplier', String(data.speedMultiplier));
                     if (speedMultEl) speedMultEl.innerText = String(data.speedMultiplier);
                     if (overallMultEl && data.overallMultiplier) overallMultEl.innerText = String(data.overallMultiplier);
-                    alert('Speed multiplier upgraded to ' + data.speedMultiplier);
+                    await showAlert('Speed multiplier upgraded to ' + data.speedMultiplier);
                 } else {
-                    alert('Fehler beim Upgrade: ' + (data.error || 'unknown'));
+                    await showAlert('Fehler beim Upgrade: ' + (data.error || 'unknown'));
                 }
             });
 
             rebirthBtn?.addEventListener('click', async ()=>{
-                if (!confirm('Rebirth resets score but keeps mutations. Proceed?')) return;
+                const confirmed = await showConfirm('Rebirth resets score but keeps mutations. Proceed?');
+                if (!confirmed) return;
                 const fd = new FormData(); fd.append('action','rebirth');
                 const res = await fetch('./main.php', {method:'POST', body:fd});
                 const data = await res.json();
@@ -831,7 +965,7 @@ $progressPercent = min(100, max(0, ($playerData['score'] / $rebirthCost) * 100))
                     // reload to get updated server-side state
                     location.reload();
                 } else {
-                    alert('Fehler bei Rebirth: ' + (data.error || 'unknown'));
+                    await showAlert('Fehler bei Rebirth: ' + (data.error || 'unknown'));
                 }
             });
 
