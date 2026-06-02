@@ -150,6 +150,7 @@ $progressPercent = min(100, max(0, ($playerData['score'] / $rebirthCost) * 100))
     <title>Work till retirement</title>
     <script src="https://cdn.babylonjs.com/babylon.js"></script>
     <script src="https://cdn.babylonjs.com/loaders/babylonjs.loaders.min.js"></script>
+    <script>const INITIAL_BALANCE = <?php echo intval($playerData['score']); ?>;</script>
     <script src="./js/babylon.js" defer></script>
 </head>
 <body>
@@ -160,6 +161,27 @@ $progressPercent = min(100, max(0, ($playerData['score'] / $rebirthCost) * 100))
         <button id="logout-button" type="submit">Abmelden</button>
     </form>
     <?php endif; ?>
+
+    <div id="balance-ui" style="position: fixed; top: 70px; right: 20px; z-index: 1000; background: linear-gradient(180deg,#222,#111); color: white; padding: 12px; border-radius:10px; font-family: sans-serif; width:260px; box-shadow: 0 8px 20px rgba(0,0,0,0.6);">
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+            <div style="font-weight:900;">Geld</div>
+            <div style="font-weight:900; font-size:18px;">€ <span id="balance-amount">0</span></div>
+        </div>
+        <div id="mults" style="display:flex; gap:8px; margin-top:10px;">
+            <div style="flex:1; background:#0b3; padding:8px; border-radius:8px; text-align:center; font-weight:800;">Money x<span id="money-mult">1</span></div>
+            <div style="flex:1; background:#39f; padding:8px; border-radius:8px; text-align:center; font-weight:800;">Speed x<span id="speed-mult">1</span></div>
+        </div>
+        <div style="display:flex; gap:8px; margin-top:10px;">
+            <button id="upgrade-money" class="rebirth-action-btn" style="flex:1; padding:8px; font-size:14px;">Upgrade Money<br><small>100</small></button>
+            <button id="upgrade-speed" class="rebirth-action-btn" style="flex:1; padding:8px; font-size:14px;">Upgrade Speed<br><small>100</small></button>
+        </div>
+        <div style="margin-top:10px; background:#222; padding:8px; border-radius:8px; text-align:center;">
+            <div style="font-weight:900;">Rebirth</div>
+            <div style="font-size:13px; margin-top:6px;">Cost: <span id="rebirth-cost">0</span></div>
+            <div style="font-size:13px; margin-top:6px;">Overall x <span id="overall-mult">1</span></div>
+            <button id="rebirth-btn" class="rebirth-action-btn" style="margin-top:8px; width:100%;">Rebirth</button>
+        </div>
+    </div>
 
     <div id="login" class="page-frame" style="<?php echo ($hideLogin || $isLoggedIn) ? 'display:none;' : ''; ?>">
     <form id="auth-form" action="" method="POST">
@@ -179,15 +201,15 @@ $progressPercent = min(100, max(0, ($playerData['score'] / $rebirthCost) * 100))
 
     <div id="frames-left">
         <div onclick="toggleFrame('index-frame')">
-         <img class="icon" src="./Assets/indexIcon.png" alt="indexIcon">
+         <img class="icon" src="./Assets/indexIcon.png" alt="indexIcon" onerror="this.onerror=null;this.src='data:image/svg+xml;utf8,<svg xmlns=\'http://www.w3.org/2000/svg\' width=\'64\' height=\'64\'><rect width=\'100%\' height=\'100%\' fill=\'%23000\' /><text x=\'50%\' y=\'50%\' fill=\'%23fff\' font-size=\'24\' font-family=\'Arial\' dominant-baseline=\'middle\' text-anchor=\'middle\'>?</text></svg>';">
          <h1 class="title">Index</h1>
         </div>
         <div onclick="toggleFrame('shop-frame')">
-        <img class="icon" src="./Assets/shopIcon.png" alt="shopIcon">
+        <img class="icon" src="./Assets/shopIcon.png" alt="shopIcon" onerror="this.onerror=null;this.src='data:image/svg+xml;utf8,<svg xmlns=\'http://www.w3.org/2000/svg\' width=\'64\' height=\'64\'><rect width=\'100%\' height=\'100%\' fill=\'%23000\' /><text x=\'50%\' y=\'50%\' fill=\'%23fff\' font-size=\'24\' font-family=\'Arial\' dominant-baseline=\'middle\' text-anchor=\'middle\'>?</text></svg>';">
          <h1 class="title">Shop</h1>
         </div>
         <div onclick="toggleFrame('rebirth-frame')">
-        <img class="icon" src="./Assets/rebirthIcon.png" alt="rebirthIcon">
+        <img class="icon" src="./Assets/rebirthIcon.png" alt="rebirthIcon" onerror="this.onerror=null;this.src='data:image/svg+xml;utf8,<svg xmlns=\'http://www.w3.org/2000/svg\' width=\'64\' height=\'64\'><rect width=\'100%\' height=\'100%\' fill=\'%23000\' /><text x=\'50%\' y=\'50%\' fill=\'%23fff\' font-size=\'24\' font-family=\'Arial\' dominant-baseline=\'middle\' text-anchor=\'middle\'>?</text></svg>';">
          <h1 class="title">Rebirth</h1>
         </div>
     </div>
@@ -359,6 +381,9 @@ $progressPercent = min(100, max(0, ($playerData['score'] / $rebirthCost) * 100))
 
         .icon {
             transition: transform 0.05s ease-in-out;
+            width: 48px;
+            height: 48px;
+            object-fit: contain;
         }
 
         .icon:hover {
@@ -739,5 +764,107 @@ $progressPercent = min(100, max(0, ($playerData['score'] / $rebirthCost) * 100))
             }
         }
     </script>
-</body>
-</html>
+    <script>
+        (function(){
+            const balanceEl = document.getElementById('balance-amount');
+            const upgradeMoneyBtn = document.getElementById('upgrade-money');
+            const upgradeSpeedBtn = document.getElementById('upgrade-speed');
+            const rebirthBtn = document.getElementById('rebirth-btn');
+
+            let balance = typeof INITIAL_BALANCE !== 'undefined' ? parseInt(INITIAL_BALANCE) : 0;
+            balanceEl.textContent = balance;
+            const moneyMultEl = document.getElementById('money-mult');
+            const speedMultEl = document.getElementById('speed-mult');
+            const overallMultEl = document.getElementById('overall-mult');
+            const rebirthCostEl = document.getElementById('rebirth-cost');
+
+            function updateBalanceDisplay(b){
+                balance = b;
+                balanceEl.textContent = balance;
+            }
+
+            upgradeMoneyBtn?.addEventListener('click', async ()=>{
+                const cost = 100;
+                if (balance < cost) { alert('Nicht genug Geld'); return; }
+                const fd = new FormData(); fd.append('action','buy_upgrade'); fd.append('type','money'); fd.append('cost', String(cost));
+                const res = await fetch('./main.php', {method:'POST', body:fd});
+                const data = await res.json();
+                if (data.success) {
+                    updateBalanceDisplay(data.balance);
+                    localStorage.setItem('moneyMultiplier', String(data.moneyMultiplier));
+                    if (moneyMultEl) moneyMultEl.innerText = String(data.moneyMultiplier);
+                    if (overallMultEl && data.overallMultiplier) overallMultEl.innerText = String(data.overallMultiplier);
+                    alert('Money multiplier upgraded to ' + data.moneyMultiplier);
+                } else {
+                    alert('Fehler beim Upgrade: ' + (data.error || 'unknown'));
+                }
+            });
+
+            upgradeSpeedBtn?.addEventListener('click', async ()=>{
+                const cost = 100;
+                if (balance < cost) { alert('Nicht genug Geld'); return; }
+                const fd = new FormData(); fd.append('action','buy_upgrade'); fd.append('type','speed'); fd.append('cost', String(cost));
+                const res = await fetch('./main.php', {method:'POST', body:fd});
+                const data = await res.json();
+                if (data.success) {
+                    updateBalanceDisplay(data.balance);
+                    localStorage.setItem('speedMultiplier', String(data.speedMultiplier));
+                    if (speedMultEl) speedMultEl.innerText = String(data.speedMultiplier);
+                    if (overallMultEl && data.overallMultiplier) overallMultEl.innerText = String(data.overallMultiplier);
+                    alert('Speed multiplier upgraded to ' + data.speedMultiplier);
+                } else {
+                    alert('Fehler beim Upgrade: ' + (data.error || 'unknown'));
+                }
+            });
+
+            rebirthBtn?.addEventListener('click', async ()=>{
+                if (!confirm('Rebirth resets score but keeps mutations. Proceed?')) return;
+                const fd = new FormData(); fd.append('action','rebirth');
+                const res = await fetch('./main.php', {method:'POST', body:fd});
+                const data = await res.json();
+                if (data.success) {
+                    // clear local upgrades
+                    localStorage.removeItem('moneyMultiplier');
+                    localStorage.removeItem('speedMultiplier');
+                    // update UI with new overall multiplier
+                    if (overallMultEl && data.overallMultiplier) overallMultEl.innerText = String(data.overallMultiplier);
+                    // reload to get updated server-side state
+                    location.reload();
+                } else {
+                    alert('Fehler bei Rebirth: ' + (data.error || 'unknown'));
+                }
+            });
+
+            // keep server balance in sync periodically
+            async function refreshBalance(){
+                try{
+                    const fd = new FormData(); fd.append('action','get_player');
+                    const res = await fetch('./main.php',{method:'POST', body:fd});
+                    const data = await res.json();
+                    if (data.success) {
+                        updateBalanceDisplay(data.balance);
+                        if (data.moneyMultiplier) {
+                            localStorage.setItem('moneyMultiplier', String(data.moneyMultiplier));
+                            if (moneyMultEl) moneyMultEl.innerText = String(data.moneyMultiplier);
+                        }
+                        if (data.speedMultiplier) {
+                            localStorage.setItem('speedMultiplier', String(data.speedMultiplier));
+                            if (speedMultEl) speedMultEl.innerText = String(data.speedMultiplier);
+                        }
+                        if (data.overallMultiplier) {
+                            if (overallMultEl) overallMultEl.innerText = String(data.overallMultiplier);
+                        }
+                        if (typeof data.rebirths !== 'undefined') {
+                            const req = (data.rebirths + 1) * 10000;
+                            if (rebirthCostEl) rebirthCostEl.innerText = String(req);
+                            const rebBtn = document.getElementById('rebirth-btn');
+                            if (rebBtn) rebBtn.disabled = data.balance < req;
+                        }
+                    }
+                }catch(e){}
+            }
+            setInterval(refreshBalance, 5000);
+            // initial fetch to ensure consistency
+            refreshBalance();
+        })();
+    </script>

@@ -25,7 +25,7 @@ if ($task === 'register') {
 
     $stmt->close();
 
-    $stmt = $conn->prepare("INSERT INTO PlayerState (name, password, rebirths, health, isAlive) VALUES (?, ?, 0, 100, 1)");
+    $stmt = $conn->prepare("INSERT INTO PlayerState (name, password, rebirths, health, isAlive, score, money_multiplier, speed_multiplier, overall_multiplier) VALUES (?, ?, 0, 100, 1, 0, 1.0, 1.0, 1.0)");
     $stmt->bind_param('ss', $user, $pass);
 
     if ($stmt->execute()) {

@@ -87,7 +87,7 @@ class SceneManager {
         z.color = new BABYLON.Color3(0, 0, 1);
     }
 static createMap(scene: BABYLON.Scene) {
-        BABYLON.SceneLoader.ImportMesh("", "Assets/", "BrokenBonesMapV2.gltf", scene, (meshes) => {
+        BABYLON.SceneLoader.ImportMesh("", "Assets/", "BrokenBonesMapV1 .gltf", scene, (meshes) => {
             const allMeshes = meshes.filter(m => m instanceof BABYLON.Mesh) as BABYLON.Mesh[];
             const mergedCity = BABYLON.Mesh.MergeMeshes(allMeshes, true, true, undefined, false, true);
 
@@ -476,7 +476,46 @@ walletBox.visibility = 0.5;
 walletBox.isPickable = false;
 walletBox.checkCollisions = true;
 
-let balance = 0;
+let balance = (window as any).INITIAL_BALANCE || 0;
+let moneyMultiplier = parseFloat(localStorage.getItem('moneyMultiplier') || '1');
+let speedMultiplier = parseFloat(localStorage.getItem('speedMultiplier') || '1');
+let overallMultiplier = parseFloat(localStorage.getItem('overallMultiplier') || '1');
+
+// fetch authoritative player data from server (balance + multipliers)
+fetch('./main.php', { method: 'POST', body: (()=>{ const f=new FormData(); f.append('action','get_player'); return f; })() })
+    .then(r=>r.json()).then(data=>{
+        if (data && data.success) {
+            balance = data.balance;
+            moneyMultiplier = data.moneyMultiplier ?? moneyMultiplier;
+            speedMultiplier = data.speedMultiplier ?? speedMultiplier;
+            overallMultiplier = data.overallMultiplier ?? overallMultiplier;
+            localStorage.setItem('moneyMultiplier', String(moneyMultiplier));
+            localStorage.setItem('speedMultiplier', String(speedMultiplier));
+            localStorage.setItem('overallMultiplier', String(overallMultiplier));
+            const el = document.getElementById('balance-amount'); if (el) el.innerText = String(balance);
+        }
+    }).catch(()=>{});
+
+function awardMoney(amount: number) {
+    amount = Math.max(0, Math.floor(amount));
+    if (amount === 0) return;
+    // apply multipliers client-side then update server
+    const finalAmount = Math.max(0, Math.floor(amount * moneyMultiplier * overallMultiplier));
+    if (finalAmount === 0) return;
+    const fd = new FormData(); fd.append('action','add_money'); fd.append('amount', String(finalAmount));
+    fetch('./main.php', { method: 'POST', body: fd }).then(r=>r.json()).then(data=>{
+        if (data.success) {
+            balance = data.balance;
+            const el = document.getElementById('balance-amount');
+            if (el) el.innerText = String(balance);
+        }
+    }).catch(()=>{
+        // fallback local
+        balance += amount;
+        const el = document.getElementById('balance-amount');
+        if (el) el.innerText = String(balance);
+    });
+}
 
 scene.onBeforeRenderObservable.add(() => {
     const monies = scene.meshes.filter(m =>
@@ -485,8 +524,9 @@ scene.onBeforeRenderObservable.add(() => {
 
     monies.forEach(money => {
         if (walletBox.intersectsMesh(money, false)) {
-            balance += 1;
-            document.getElementById("balance")!.innerText = `Balance: $${balance}`;
+            const base = 1;
+            const amount = Math.max(1, Math.floor(base * moneyMultiplier * overallMultiplier));
+            awardMoney(amount);
             money.dispose();
         }
     });
@@ -515,5 +555,118 @@ function createInvisibleBorder(scene: BABYLON.Scene, width: number, depth: numbe
     wallB.checkCollisions = true;
 }
 createInvisibleBorder(scene, 30, 30);
+
+// Ragdoll simulation (simple velocity integration, camera follows ragdoll)
+let ragdollMode = false;
+let ragdollPos = camera.position.clone();
+let ragdollVel = new BABYLON.Vector3(0,0,0);
+const lastCollisionAt = new Map<string, number>();
+let _savedCameraSpeed: number | null = null;
+
+function nowMs(){ return performance.now(); }
+
+window.addEventListener('keydown', (e)=>{
+    if (e.key.toLowerCase() === 'r') {
+        ragdollMode = !ragdollMode;
+        if (ragdollMode) {
+            // launch ragdoll from camera forward
+            ragdollPos = camera.position.clone();
+            const forward = camera.getDirection(new BABYLON.Vector3(0,0,1)).normalize();
+            ragdollVel = forward.scale(10 * speedMultiplier).add(new BABYLON.Vector3(0, 2, 0));
+            // fully disable camera inputs while ragdolling
+            try { camera.detachControl(renderCanvas); } catch(e) {}
+            try { _savedCameraSpeed = camera.speed; camera.speed = 0; } catch(e) {}
+        } else {
+            // stop ragdoll and reattach camera controls
+            try { camera.attachControl(renderCanvas, true); } catch(e) {}
+            try { if (_savedCameraSpeed !== null) camera.speed = _savedCameraSpeed; _savedCameraSpeed = null; } catch(e) {}
+        }
+    }
+});
+
+scene.onBeforeRenderObservable.add(() => {
+    if (!ragdollMode) return;
+    // integrate with slope sliding and friction
+    const dt = (babylonEngine && typeof babylonEngine.getDeltaTime === 'function' ? babylonEngine.getDeltaTime() : 16) / 1000 || 1/60;
+    // constant gravity
+    const gravity = new BABYLON.Vector3(0, -9.81, 0);
+    // apply gravity
+    ragdollVel.addInPlace(gravity.scale(dt));
+
+    // ground check: cast a short ray downward to detect ground and its normal
+    const downRay = new BABYLON.Ray(ragdollPos.add(new BABYLON.Vector3(0, 0.2, 0)), new BABYLON.Vector3(0, -1, 0), 1.5);
+    const pick = scene.pickWithRay(downRay);
+    let grounded = false;
+    let groundNormal = new BABYLON.Vector3(0,1,0);
+    if (pick && pick.hit && pick.pickedPoint) {
+        grounded = true;
+        try {
+            const n = (pick as any).getNormal && (pick as any).getNormal(true);
+            if (n) groundNormal = n.normalize();
+        } catch(e) {}
+    }
+
+    if (grounded) {
+        // decompose velocity into normal and tangent
+        const v = ragdollVel.clone();
+        const vNormalComp = groundNormal.scale(BABYLON.Vector3.Dot(v, groundNormal));
+        let vTangent = v.subtract(vNormalComp);
+
+        // slope downhill direction: project gravity onto tangent plane
+        const g = gravity.normalize();
+        let downhill = g.subtract(groundNormal.scale(BABYLON.Vector3.Dot(g, groundNormal)));
+        if (downhill.lengthSquared() > 0.0001) downhill = downhill.normalize();
+
+        // slide acceleration along downhill proportional to slope
+        const slopeAngle = Math.acos(Math.max(-1, Math.min(1, BABYLON.Vector3.Dot(groundNormal, new BABYLON.Vector3(0,1,0))))) || 0;
+        const slideAccel = Math.sin(slopeAngle) * 9.81 * 0.6; // tuned factor
+        // apply sliding accel to tangent
+        vTangent = vTangent.add(downhill.scale(slideAccel * dt));
+
+        // apply ground friction to tangent
+        const friction = 4.0; // higher => quicker stop on flat ground
+        vTangent = vTangent.scale(Math.max(0, 1 - friction * dt));
+
+        // prevent sinking into ground: keep small upward normal if overlapping
+        if (ragdollPos.y < pick.pickedPoint!.y + 0.05) {
+            ragdollPos.y = pick.pickedPoint!.y + 0.05;
+            // damp normal component
+            vNormalComp.scaleInPlace(-0.2);
+        }
+
+        ragdollVel = vNormalComp.add(vTangent);
+    }
+
+    // integrate position
+    ragdollPos = ragdollPos.add(ragdollVel.scale(dt));
+    // keep above minimal ground if not grounded
+    if (ragdollPos.y < 0.05) ragdollPos.y = 0.05;
+
+    camera.position.copyFrom(ragdollPos);
+
+    // check collisions with collidable meshes
+    const collidables = scene.meshes.filter(m => m.checkCollisions && m.isVisible && m.isEnabled());
+    for (const m of collidables) {
+        if (!m.getBoundingInfo) continue;
+        const key = m.name || m.uniqueId.toString();
+        const last = lastCollisionAt.get(key) || 0;
+        if (nowMs() - last < 300) continue; // cooldown per mesh
+        const bbox = m.getBoundingInfo().boundingBox;
+        const worldCenter = bbox.centerWorld;
+        const dist = BABYLON.Vector3.Distance(worldCenter, ragdollPos);
+        const threshold = Math.max(bbox.extendSizeWorld.length(), 1) + 1;
+        if (dist < threshold) {
+            const impactSpeed = ragdollVel.length();
+            if (impactSpeed > 1.5) {
+                const baseAmount = Math.floor(impactSpeed * 5);
+                const amount = Math.max(1, Math.floor(baseAmount * moneyMultiplier * overallMultiplier));
+                awardMoney(amount);
+            }
+            lastCollisionAt.set(key, nowMs());
+            // simple response
+            ragdollVel = ragdollVel.scale(-0.3);
+        }
+    }
+});
 
 
