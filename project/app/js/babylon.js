@@ -4,459 +4,192 @@ const babylonEngine = new BABYLON.Engine(renderCanvas, true, { preserveDrawingBu
 class SceneManager {
     static create(engine, canvas) {
         const s = new BABYLON.Scene(engine);
-        let CAMERA;
-        CAMERA = new BABYLON.UniversalCamera("Camera", new BABYLON.Vector3(300, 1500, -50), s);
-        CAMERA.setTarget(CAMERA.position.add(new BABYLON.Vector3(0, -10, 0)));
-        CAMERA.attachControl(canvas, true);
-        s.gravity = new BABYLON.Vector3(0, -3.81, 0);
-        CAMERA.applyGravity = true;
-        CAMERA.needMoveForGravity = true;
-        s.collisionsEnabled = true;
-        CAMERA.checkCollisions = true;
-        CAMERA.ellipsoid = new BABYLON.Vector3(0.6, 3, 0.6);
-        CAMERA.ellipsoidOffset = new BABYLON.Vector3(0, 0, 0);
-        CAMERA.speed = 1;
-        CAMERA.angularSensibility = 1000;
-        CAMERA.inertia = 0.8;
-        CAMERA.keysUp[0] = "W".charCodeAt(0);
-        CAMERA.keysDown[0] = "S".charCodeAt(0);
-        CAMERA.keysLeft[0] = "A".charCodeAt(0);
-        CAMERA.keysRight[0] = "D".charCodeAt(0);
-        CAMERA.keysRotateLeft[0] = 37;
-        CAMERA.keysRotateRight[0] = 39;
-        CAMERA.keysRotateUp[0] = 3;
-        CAMERA.keysRotateDown[0] = 3;
+        const CAMERA = new BABYLON.TargetCamera("Camera", new BABYLON.Vector3(0, 1008, -22), s);
+        s.activeCamera = CAMERA;
         const pipeline = new BABYLON.DefaultRenderingPipeline("pipeline", true, s, [CAMERA]);
         pipeline.imageProcessingEnabled = true;
         pipeline.imageProcessing.vignetteEnabled = false;
-        pipeline.imageProcessing.exposure = 1;
-        pipeline.imageProcessing.contrast = 1;
-        pipeline.imageProcessing.colorCurvesEnabled = true;
+        pipeline.imageProcessing.exposure = 1.1;
+        pipeline.imageProcessing.contrast = 1.1;
         const sun = new BABYLON.DirectionalLight("sun", new BABYLON.Vector3(-1, -2, -1), s);
         sun.position = new BABYLON.Vector3(20, 100, 20);
         sun.intensity = 2.5;
-        sun.diffuse = new BABYLON.Color3(1, 1, 0.9);
         const hemi = new BABYLON.HemisphericLight('hemi', new BABYLON.Vector3(0, 1, 0.5), s);
-        hemi.intensity = 3;
+        hemi.intensity = 2.5;
         s.clearColor = new BABYLON.Color4(0.4, 0.7, 1, 1);
         return s;
     }
     static run(scene, engine) {
         engine.runRenderLoop(() => scene.render());
         window.addEventListener('resize', () => engine.resize());
-        scene.onBeforeRenderObservable.add(() => {
-            const sausageHitbox = scene.getMeshByName("item");
-            const stoveMesh = scene.getMeshByName("stove");
-            if (sausageHitbox && stoveMesh) {
-                scene.meshes.filter(m => m.name === "item").forEach(sausageHitbox => {
-                    if (sausageHitbox.intersectsMesh(stove, false)) {
-                        createStoveSmoke(scene, stove);
-                    }
-                });
-            }
-        });
     }
-    static enablePointerLock(scene, canvas) {
-        let isLocked = false;
-        scene.onPointerDown = function (_evt) {
-            if (!isLocked && canvas.requestPointerLock) {
-                canvas.requestPointerLock();
-            }
-        };
-    }
-    static axes() {
-        const x = BABYLON.MeshBuilder.CreateLines("x", { points: [new BABYLON.Vector3(0, 0, 0), new BABYLON.Vector3(1000, 0, 0)] }, sceneInstance);
-        x.color = new BABYLON.Color3(1, 0, 0);
-        const y = BABYLON.MeshBuilder.CreateLines("y", { points: [new BABYLON.Vector3(0, 0, 0), new BABYLON.Vector3(0, 1000, 0)] }, sceneInstance);
-        y.color = new BABYLON.Color3(0, 1, 0);
-        const z = BABYLON.MeshBuilder.CreateLines("z", { points: [new BABYLON.Vector3(0, 0, 0), new BABYLON.Vector3(0, 0, 1000)] }, sceneInstance);
-        z.color = new BABYLON.Color3(0, 0, 1);
-    }
-    static createMap(scene) {
-        BABYLON.SceneLoader.ImportMesh("", "Assets/", "BrokenBonesV5.gltf", scene, (meshes) => {
-            const allMeshes = meshes.filter(m => m instanceof BABYLON.Mesh);
-            const mergedCity = BABYLON.Mesh.MergeMeshes(allMeshes, true, true, undefined, false, true);
-            if (mergedCity) {
-                mergedCity.name = "OptimizedMap";
-                mergedCity.checkCollisions = true;
-                mergedCity.freezeWorldMatrix();
-                const boundingInfo = mergedCity.getBoundingInfo();
-                const center = boundingInfo.boundingBox.centerWorld;
-                const size = boundingInfo.boundingBox.extendSizeWorld;
-                if (size.x === 0 && size.y === 0 && size.z === 0) {
-                    camera.position = new BABYLON.Vector3(50, 50, 50);
-                    camera.setTarget(new BABYLON.Vector3(0, 0, 0));
-                }
-                else {
-                    const maxDim = Math.max(size.x, size.y, size.z);
-                    camera.position = center.add(new BABYLON.Vector3(maxDim * 2, maxDim * 1.5, maxDim * 2));
-                    camera.setTarget(center);
-                    camera.maxZ = maxDim * 10;
-                }
-            }
-        });
+    static createInitialWorld(scene) {
+        blockMaterial = new BABYLON.StandardMaterial("blockMat", scene);
+        blockMaterial.diffuseColor = new BABYLON.Color3(0.9, 0.4, 0.1);
+        blockMaterial.emissiveColor = new BABYLON.Color3(0.2, 0.08, 0.0);
+        generateBlocksChunk(scene, 800, 1000);
     }
 }
-const sceneInstance = SceneManager.create(babylonEngine, renderCanvas);
-let ACTIVE_MESH;
+let blockMaterial;
+let activeBlocks = [];
+let nextSpawnY = 800;
+function generateBlocksChunk(scene, minY, maxY) {
+    for (let i = 0; i < 32; i++) {
+        const w = Math.random() * 9 + 7;
+        const h = 1.2;
+        const d = Math.random() * 4 + 3;
+        const block = BABYLON.MeshBuilder.CreateBox(`procedural_block_${minY}_${i}`, { width: w, height: h, depth: d }, scene);
+        const posX = (Math.random() - 0.5) * 16;
+        const posY = minY + Math.random() * (maxY - minY);
+        const posZ = 0;
+        block.position.set(posX, posY, posZ);
+        block.material = blockMaterial;
+        const tiltX = 0.395;
+        const rotY = 0;
+        const tiltZ = (Math.random() > 0.5 ? 1 : -1) * (0.35 + Math.random() * 0.2);
+        block.rotation.set(tiltX, rotY, tiltZ);
+        activeBlocks.push(block);
+    }
+}
 const scene = SceneManager.create(babylonEngine, renderCanvas);
 SceneManager.run(scene, babylonEngine);
 const camera = scene.activeCamera;
-SceneManager.createMap(scene);
-let flightMode = false;
-window.addEventListener("keydown", (e) => {
-    if (e.shiftKey && e.key.toLowerCase() === "p") {
-        flightMode = !flightMode;
-        if (flightMode) {
-            console.log("Flugmodus aktiviert");
-            scene.gravity = new BABYLON.Vector3(0, 0, 0);
-            camera.applyGravity = false;
-            camera.needMoveForGravity = false;
-            camera.speed = 10;
+class RobloxCharacter {
+    constructor(scene) {
+        this.limbs = [];
+        this.defaultMats = new Map();
+        this.hitMaterial = new BABYLON.StandardMaterial("hitMat", scene);
+        this.hitMaterial.diffuseColor = new BABYLON.Color3(1, 0, 0);
+        this.hitMaterial.emissiveColor = new BABYLON.Color3(0.6, 0, 0);
+        this.root = BABYLON.MeshBuilder.CreateBox("r6_torso", { width: 2, height: 2, depth: 1 }, scene);
+        const torsoMat = new BABYLON.StandardMaterial("torsoMat", scene);
+        torsoMat.diffuseColor = new BABYLON.Color3(0, 0.3, 0.9);
+        this.root.material = torsoMat;
+        this.defaultMats.set("r6_torso", torsoMat);
+        const head = BABYLON.MeshBuilder.CreateBox("r6_head", { width: 1.2, height: 1.2, depth: 1.2 }, scene);
+        head.position.y = 1.6;
+        head.parent = this.root;
+        const yellowMat = new BABYLON.StandardMaterial("yellowMat", scene);
+        yellowMat.diffuseColor = new BABYLON.Color3(1, 0.8, 0);
+        head.material = yellowMat;
+        this.defaultMats.set("r6_head", yellowMat);
+        const leftArm = BABYLON.MeshBuilder.CreateBox("r6_leftArm", { width: 1, height: 2, depth: 1 }, scene);
+        leftArm.position.x = -1.6;
+        leftArm.parent = this.root;
+        leftArm.material = yellowMat;
+        this.defaultMats.set("r6_leftArm", yellowMat);
+        const rightArm = BABYLON.MeshBuilder.CreateBox("r6_rightArm", { width: 1, height: 2, depth: 1 }, scene);
+        rightArm.position.x = 1.6;
+        rightArm.parent = this.root;
+        rightArm.material = yellowMat;
+        this.defaultMats.set("r6_rightArm", yellowMat);
+        const leftLeg = BABYLON.MeshBuilder.CreateBox("r6_leftLeg", { width: 1, height: 2, depth: 1 }, scene);
+        leftLeg.position.set(-0.5, -2, 0);
+        leftLeg.parent = this.root;
+        const greenMat = new BABYLON.StandardMaterial("greenMat", scene);
+        greenMat.diffuseColor = new BABYLON.Color3(0, 0.7, 0.1);
+        leftLeg.material = greenMat;
+        this.defaultMats.set("r6_leftLeg", greenMat);
+        const rightLeg = BABYLON.MeshBuilder.CreateBox("r6_rightLeg", { width: 1, height: 2, depth: 1 }, scene);
+        rightLeg.position.set(0.5, -2, 0);
+        rightLeg.parent = this.root;
+        rightLeg.material = greenMat;
+        this.defaultMats.set("r6_rightLeg", greenMat);
+        this.limbs = [this.root, head, leftArm, rightArm, leftLeg, rightLeg];
+    }
+    triggerFlash(mesh) {
+        mesh.material = this.hitMaterial;
+        setTimeout(() => {
+            const def = this.defaultMats.get(mesh.name);
+            if (def)
+                mesh.material = def;
+        }, 180);
+    }
+    updateAnimation(time, speed, isRagdoll) {
+        if (isRagdoll) {
+            const intensity = Math.min(1.2, speed * 0.08);
+            this.limbs.forEach((limb, index) => {
+                if (limb.name !== "r6_torso") {
+                    limb.rotation.x = Math.sin(time * 24 + index) * intensity;
+                    limb.rotation.z = Math.cos(time * 18 + index) * (intensity * 0.6);
+                }
+            });
+            this.root.rotation.z = -speed * 0.015;
         }
         else {
-            console.log("Normaler Modus");
-            scene.gravity = new BABYLON.Vector3(0, -3.81, 0);
-            camera.applyGravity = true;
-            camera.needMoveForGravity = true;
-            camera.speed = 1;
+            this.limbs.forEach(l => l.rotation.set(0, 0, 0));
+            this.root.rotation.set(0, 0, 0);
         }
     }
-});
-SceneManager.enablePointerLock(scene, renderCanvas);
-const stove = BABYLON.MeshBuilder.CreateBox("stove", { width: 7, height: 1, depth: 3 }, scene);
-stove.position = new BABYLON.Vector3(4, 2.8, 4);
-stove.checkCollisions = true;
-stove.isPickable = false;
-stove.visibility = 0;
-const smokeSystem = new BABYLON.ParticleSystem("smoke", 200, scene);
-function createStoveSmoke(scene, stove) {
-    smokeSystem.particleTexture = new BABYLON.Texture("Assets/smoke.png", scene);
-    smokeSystem.emitter = new BABYLON.Vector3(stove.position.x, stove.position.y + 1, stove.position.z);
-    smokeSystem.minEmitBox = new BABYLON.Vector3(-1, 0, -1);
-    smokeSystem.maxEmitBox = new BABYLON.Vector3(1, 0, 1);
-    smokeSystem.color1 = new BABYLON.Color4(0.8, 0.8, 0.8, 0.6);
-    smokeSystem.color2 = new BABYLON.Color4(0.9, 0.9, 0.9, 0.3);
-    smokeSystem.colorDead = new BABYLON.Color4(0.8, 0.8, 0.8, 0);
-    smokeSystem.minSize = 0.7;
-    smokeSystem.maxSize = 1.5;
-    smokeSystem.minLifeTime = 1.2;
-    smokeSystem.maxLifeTime = 2.5;
-    smokeSystem.emitRate = 15;
-    smokeSystem.blendMode = BABYLON.ParticleSystem.BLENDMODE_STANDARD;
-    smokeSystem.gravity = new BABYLON.Vector3(0, 0.1, 0);
-    smokeSystem.direction1 = new BABYLON.Vector3(-0.2, 1, -0.2);
-    smokeSystem.direction2 = new BABYLON.Vector3(0.2, 1, 0.2);
-    smokeSystem.minAngularSpeed = 0;
-    smokeSystem.maxAngularSpeed = Math.PI;
-    smokeSystem.minEmitPower = 0.5;
-    smokeSystem.maxEmitPower = 1.2;
-    smokeSystem.updateSpeed = 0.02;
-    smokeSystem.start();
-    setTimeout(() => {
-        smokeSystem.stop();
-    }, 1000);
 }
-const interactable = BABYLON.MeshBuilder.CreateBox("interactableBox", { height: 7, width: 3.5, depth: 3.5 }, scene);
-interactable.position = new BABYLON.Vector3(-16, 4.1, 3);
-interactable.isPickable = true;
-interactable.visibility = 0;
-const popUp = document.getElementById("pop");
-let isLooking = false;
-let holdStart = null;
-let opeen = false;
-scene.onBeforeRenderObservable.add(() => {
-    var _a;
-    scene.meshes.filter(m => m.name === "item").forEach(sausageHitbox => {
-        const stoveMesh = scene.getMeshByName("stove");
-        if (stoveMesh &&
-            sausageHitbox.intersectsMesh(stoveMesh, false) &&
-            !sausageHitbox.isCooked &&
-            !sausageHitbox.isCooking) {
-            replaceWithHotdog(scene, sausageHitbox);
-        }
-    });
-    const pick = scene.pick(scene.pointerX, scene.pointerY);
-    const isHovering = (pick === null || pick === void 0 ? void 0 : pick.hit) && ((_a = pick.pickedMesh) === null || _a === void 0 ? void 0 : _a.name) === "interactableBox";
-    if (isHovering && !isLooking && !opeen) {
-        popUp.style.display = "block";
-        popUp.innerText = "Hold [E]";
-        isLooking = true;
-    }
-    else if (!isHovering && isLooking) {
-        popUp.style.display = "none";
-        holdStart = null;
-        isLooking = false;
-    }
-    if (isLooking && holdStart) {
-        popUp.innerText = "Opening...";
-        const holdDuration = performance.now() - holdStart;
-        if (holdDuration >= 2) {
-            OpenFridge();
-        }
-        holdStart = null;
-    }
-});
-window.addEventListener("keydown", (e) => {
-    if (e.key.toLowerCase() === "e" && isLooking && !holdStart) {
-        holdStart = performance.now();
-    }
-});
-window.addEventListener("keyup", (e) => {
-    if (e.key.toLowerCase() === "e") {
-        holdStart = null;
-        if (isLooking)
-            popUp.innerText = "Hold [E]";
-    }
-});
-let fridge = document.getElementById("fridge");
-fridge.style.display = "none";
-function OpenFridge() {
-    let fridge = document.getElementById("fridge");
-    fridge.style.display = "block";
-    fridge.style.justifyContent = "center";
-    fridge.style.alignContent = "center";
-    popUp.style.display = "none";
-    opeen = true;
-}
-function replaceWithHotdog(scene, sausageHitbox) {
-    sausageHitbox.isCooked = true;
-    setTimeout(() => {
-        sausageHitbox.getChildMeshes().forEach(child => child.dispose());
-        BABYLON.SceneLoader.ImportMesh("", "Assets/", "hotdog.glb", scene, (meshes) => {
-            const hotdog = meshes[0];
-            hotdog.scaling.scaleInPlace(3);
-            hotdog.parent = sausageHitbox;
-            hotdog.position = BABYLON.Vector3.Zero();
-            hotdog.isPickable = false;
-            hotdog.name = "hotdog";
-            sausageHitbox.isCooked = true;
-        });
-    }, 10000);
-}
-function spawnCustomer(scene) {
-    BABYLON.SceneLoader.ImportMesh("", "Assets/", "noob.glb", scene, (meshes) => {
-        const parent = new BABYLON.TransformNode("customerParent", scene);
-        meshes.forEach(m => m.parent = parent);
-        parent.scaling.scaleInPlace(1.2);
-        parent.position = new BABYLON.Vector3(-1.5, 0, -10);
-        parent.rotation.y = Math.PI / 2;
-        parent.rotation.x = 4.72;
-        const cloud = createOrderCloud(scene, parent, "Can i get a hotdog and a coke?");
-        parent.orderCloud = cloud;
-    });
-}
-function updateOrderCloud(parentMesh, newOrder) {
-    const cloud = parentMesh.orderCloud;
-    if (cloud && cloud.dynamicTexture) {
-        cloud.dynamicTexture.getContext().clearRect(0, 0, 256, 128);
-        cloud.dynamicTexture.drawText(newOrder, 20, 80, "bold 32px Arial", "black", "white", true);
-        cloud.dynamicTexture.update();
-    }
-}
-function spawnMoney(scene) {
-    BABYLON.SceneLoader.ImportMesh("", "Assets/", "money.glb", scene, (meshes) => {
-        const model = meshes[0];
-        model.scaling.scaleInPlace(0.3);
-        model.isPickable = false;
-        model.computeWorldMatrix(true);
-        const boundingInfo = model.getBoundingInfo();
-        const size = boundingInfo.boundingBox.extendSizeWorld.scale(0.2);
-        const hitbox = BABYLON.MeshBuilder.CreateBox("item", {
-            width: size.x * 1.2,
-            height: size.y * 1.2,
-            depth: size.z * 1.2
-        }, scene);
-        hitbox.position = new BABYLON.Vector3(-4.5, 3.6, -7.5);
-        hitbox.isPickable = true;
-        hitbox.visibility = 0;
-        hitbox.checkCollisions = true;
-        model.parent = hitbox;
-        model.position = BABYLON.Vector3.Zero();
-        model.isPickable = false;
-        model.name = "money";
-    });
-}
-spawnMoney(scene);
-function createOrderCloud(scene, parentMesh, orderText) {
-    const dynamicTexture = new BABYLON.DynamicTexture("orderCloudTexture", { width: 256, height: 128 }, scene, false);
-    dynamicTexture.drawText(orderText, 20, 80, "bold 14px Arial", "black", "white", true);
-    const cloud = BABYLON.MeshBuilder.CreatePlane("orderCloud", { width: 2.5, height: 1 }, scene);
-    cloud.position = new BABYLON.Vector3(0, 5, 0);
-    cloud.billboardMode = BABYLON.Mesh.BILLBOARDMODE_ALL;
-    const mat = new BABYLON.StandardMaterial("orderCloudMat", scene);
-    mat.diffuseTexture = dynamicTexture;
-    mat.emissiveColor = new BABYLON.Color3(1, 1, 1);
-    mat.backFaceCulling = false;
-    cloud.material = mat;
-    cloud.parent = parentMesh;
-    cloud.dynamicTexture = dynamicTexture;
-    return cloud;
-}
-spawnCustomer(scene);
-function checkOrderCollision(scene, orderBox) {
-    orderBox.checkCollisions = true;
-    const hotdog = scene.meshes.find(m => m.name === "item" && m.getChildMeshes().some(child => child.name === "hotdog"));
-    const coke = scene.meshes.find(m => m.name === "item" && m.getChildMeshes().some(child => child.name === "coke"));
-    if (hotdog) {
-        hotdog.checkCollisions = true;
-    }
-    if (coke) {
-        coke.checkCollisions = true;
-    }
-    if (hotdog && coke &&
-        orderBox.intersectsMesh(hotdog, false) &&
-        orderBox.intersectsMesh(coke, false)) {
-        spawnMoney(scene);
-        hotdog.dispose();
-        coke.dispose();
-        return true;
-    }
-    return false;
-}
-const orderBox = BABYLON.MeshBuilder.CreateBox("orderBox", { width: 3, height: 3, depth: 3 }, scene);
-orderBox.position = new BABYLON.Vector3(-3.9, 4, -7.5);
-orderBox.visibility = 0.2;
-orderBox.isPickable = false;
-orderBox.checkCollisions = true;
-scene.onBeforeRenderObservable.add(() => {
-    checkOrderCollision(scene, orderBox);
-});
-function spawnSausage(scene) {
-    BABYLON.SceneLoader.ImportMesh("", "Assets/", "sausage.glb", scene, (meshes) => {
-        const model = meshes[0];
-        model.scaling.scaleInPlace(3);
-        model.computeWorldMatrix(true);
-        const boundingInfo = model.getBoundingInfo();
-        const size = boundingInfo.boundingBox.extendSizeWorld.scale(2);
-        const hitbox = BABYLON.MeshBuilder.CreateBox("item", {
-            width: size.x * 1.2,
-            height: size.y * 1.2,
-            depth: size.z * 1.2
-        }, scene);
-        hitbox.position = new BABYLON.Vector3(0, 4, 0);
-        hitbox.isPickable = true;
-        hitbox.visibility = 0;
-        hitbox.checkCollisions = true;
-        model.parent = hitbox;
-        model.position = BABYLON.Vector3.Zero();
-        model.isPickable = false;
-    });
-}
-function spawnCoke(scene) {
-    BABYLON.SceneLoader.ImportMesh("", "Assets/", "coke.glb", scene, (meshes) => {
-        const model = meshes[0];
-        model.scaling.scaleInPlace(3);
-        model.computeWorldMatrix(true);
-        const boundingInfo = model.getBoundingInfo();
-        const size = boundingInfo.boundingBox.extendSizeWorld.scale(2);
-        const hitbox = BABYLON.MeshBuilder.CreateBox("item", {
-            width: size.x * 1.2,
-            height: size.y * 1.2,
-            depth: size.z * 1.2
-        }, scene);
-        hitbox.position = new BABYLON.Vector3(0, 4, 0);
-        hitbox.isPickable = true;
-        hitbox.visibility = 0;
-        hitbox.checkCollisions = true;
-        model.parent = hitbox;
-        model.position = new BABYLON.Vector3(0, -1, 0);
-        model.isPickable = false;
-        model.name = "coke";
-        hitbox.name = "item";
-    });
-}
-let pickedMesh = null;
-let isDragging = false;
-let dragOffset = new BABYLON.Vector3();
-let dragStartDistance = 0;
-scene.onPointerDown = () => {
-    var _a;
-    if (renderCanvas.requestPointerLock) {
-        renderCanvas.requestPointerLock();
-    }
-    const ray = scene.activeCamera.getForwardRay();
-    const pick = scene.pickWithRay(ray);
-    if ((pick === null || pick === void 0 ? void 0 : pick.hit) && ((_a = pick.pickedMesh) === null || _a === void 0 ? void 0 : _a.name) === "item") {
-        pickedMesh = pick.pickedMesh;
-        isDragging = true;
-        pickedMesh.checkCollisions = false;
-        dragStartDistance = BABYLON.Vector3.Distance(ray.origin, pickedMesh.position);
-        const pickPoint = pick.pickedPoint;
-        dragOffset = pickedMesh.position.subtract(pickPoint);
-    }
-};
-scene.onBeforeRenderObservable.add(() => {
-    var _a;
-    const ray = scene.activeCamera.getForwardRay();
-    const pick = scene.pickWithRay(ray);
-    const isHovering = (pick === null || pick === void 0 ? void 0 : pick.hit) && ((_a = pick.pickedMesh) === null || _a === void 0 ? void 0 : _a.name) === "interactableBox";
-    if (isHovering && !isLooking && !opeen) {
-        popUp.style.display = "block";
-        popUp.innerText = "Hold [E]";
-        isLooking = true;
-    }
-    else if (!isHovering && isLooking) {
-        popUp.style.display = "none";
-        holdStart = null;
-        isLooking = false;
-    }
-    if (isLooking && holdStart) {
-        popUp.innerText = "Opening...";
-        const holdDuration = performance.now() - holdStart;
-        if (holdDuration >= 2) {
-            OpenFridge();
-        }
-        holdStart = null;
-    }
-});
-scene.onPointerMove = () => {
-    if (!isDragging || !pickedMesh)
-        return;
-    const ray = scene.activeCamera.getForwardRay();
-    const pointInFront = ray.origin.add(ray.direction.scale(dragStartDistance));
-    pickedMesh.position = pointInFront.add(dragOffset);
-    pickedMesh.position.y = Math.max(pickedMesh.position.y, 0.1);
-};
-scene.onPointerUp = () => {
-    if (pickedMesh) {
-        pickedMesh.checkCollisions = true;
-    }
-    isDragging = false;
-    pickedMesh = null;
-};
-const walletBox = BABYLON.MeshBuilder.CreateBox("walletBox", { width: 2, height: 1, depth: 3 }, scene);
-walletBox.position = new BABYLON.Vector3(-5, 3, 4);
-walletBox.visibility = 0.5;
-walletBox.isPickable = false;
-walletBox.checkCollisions = true;
+let health = 100;
+let isDead = false;
+let ragdollMode = false;
+let flightMode = false;
+let ragdollPos = new BABYLON.Vector3(0, 1002, 0);
+let ragdollVel = new BABYLON.Vector3(0, 0, 0);
+const lastCollisionAt = new Map();
+const visualCharacter = new RobloxCharacter(scene);
+visualCharacter.root.position.copyFrom(ragdollPos);
+SceneManager.createInitialWorld(scene);
+const inputMap = {};
+window.addEventListener("keydown", (e) => { inputMap[e.key.toLowerCase()] = true; });
+window.addEventListener("keyup", (e) => { inputMap[e.key.toLowerCase()] = false; });
 let balance = window.INITIAL_BALANCE || 0;
 let moneyMultiplier = parseFloat(localStorage.getItem('moneyMultiplier') || '1');
 let speedMultiplier = parseFloat(localStorage.getItem('speedMultiplier') || '1');
 let overallMultiplier = parseFloat(localStorage.getItem('overallMultiplier') || '1');
-fetch('./main.php', { method: 'POST', body: (() => { const f = new FormData(); f.append('action', 'get_player'); return f; })() })
-    .then(r => r.json()).then(data => {
-    var _a, _b, _c;
-    if (data && data.success) {
-        balance = data.balance;
-        moneyMultiplier = (_a = data.moneyMultiplier) !== null && _a !== void 0 ? _a : moneyMultiplier;
-        speedMultiplier = (_b = data.speedMultiplier) !== null && _b !== void 0 ? _b : speedMultiplier;
-        overallMultiplier = (_c = data.overallMultiplier) !== null && _c !== void 0 ? _c : overallMultiplier;
-        localStorage.setItem('moneyMultiplier', String(moneyMultiplier));
-        localStorage.setItem('speedMultiplier', String(speedMultiplier));
-        localStorage.setItem('overallMultiplier', String(overallMultiplier));
-        const el = document.getElementById('balance-amount');
-        if (el)
-            el.innerText = String(balance);
+const hpDisplay = document.createElement("div");
+hpDisplay.style.position = "absolute";
+hpDisplay.style.top = "60px";
+hpDisplay.style.left = "20px";
+hpDisplay.style.color = "#ff3333";
+hpDisplay.style.fontFamily = "Arial, sans-serif";
+hpDisplay.style.fontSize = "24px";
+hpDisplay.style.fontWeight = "bold";
+hpDisplay.style.textShadow = "2px 2px 4px #000000";
+hpDisplay.style.zIndex = "1002";
+hpDisplay.innerText = "HP: 100";
+document.body.appendChild(hpDisplay);
+function updateHPDisplay() {
+    hpDisplay.innerText = `HP: ${Math.max(0, health)}`;
+    if (health <= 0) {
+        hpDisplay.innerText = "STATUS: WASTED";
     }
-}).catch(() => { });
-function awardMoney(amount) {
+}
+function spawnFloatingMoneyText(scene, pos, amount) {
+    const dynamicTexture = new BABYLON.DynamicTexture("moneyTex", { width: 160, height: 80 }, scene, false);
+    dynamicTexture.hasAlpha = true;
+    dynamicTexture.drawText(`+€${amount}`, null, null, "bold 28px Arial", "#55ff55", "transparent", true);
+    const plane = BABYLON.MeshBuilder.CreatePlane("floatingText", { width: 3, height: 1.5 }, scene);
+    plane.position.copyFrom(pos);
+    plane.position.z -= 1;
+    plane.billboardMode = BABYLON.Mesh.BILLBOARDMODE_ALL;
+    const mat = new BABYLON.StandardMaterial("textMat", scene);
+    mat.diffuseTexture = dynamicTexture;
+    mat.emissiveColor = new BABYLON.Color3(1, 1, 1);
+    mat.backFaceCulling = false;
+    plane.material = mat;
+    let frame = 0;
+    const observer = scene.onBeforeRenderObservable.add(() => {
+        plane.position.y += 0.05;
+        frame++;
+        if (frame > 45) {
+            scene.onBeforeRenderObservable.remove(observer);
+            plane.dispose();
+            mat.dispose();
+            dynamicTexture.dispose();
+        }
+    });
+}
+function awardMoney(amount, pos) {
     amount = Math.max(0, Math.floor(amount));
     if (amount === 0)
         return;
     const finalAmount = Math.max(0, Math.floor(amount * moneyMultiplier * overallMultiplier));
     if (finalAmount === 0)
         return;
+    spawnFloatingMoneyText(scene, pos, finalAmount);
     const fd = new FormData();
     fd.append('action', 'add_money');
     fd.append('amount', String(finalAmount));
@@ -468,146 +201,129 @@ function awardMoney(amount) {
                 el.innerText = String(balance);
         }
     }).catch(() => {
-        balance += amount;
+        balance += finalAmount;
         const el = document.getElementById('balance-amount');
         if (el)
             el.innerText = String(balance);
     });
 }
-scene.onBeforeRenderObservable.add(() => {
-    const monies = scene.meshes.filter(m => m.name === "item" && m.getChildMeshes().some(child => child.name === "money"));
-    monies.forEach(money => {
-        if (walletBox.intersectsMesh(money, false)) {
-            const base = 1;
-            const amount = Math.max(1, Math.floor(base * moneyMultiplier * overallMultiplier));
-            awardMoney(amount);
-            money.dispose();
-        }
-    });
-});
-function createInvisibleBorder(scene, width, depth, height = 10) {
-    const wallL = BABYLON.MeshBuilder.CreateBox("borderL", { width: 1, height, depth }, scene);
-    wallL.position = new BABYLON.Vector3(-width / 2, height / 2, 0);
-    wallL.visibility = 0;
-    wallL.isPickable = false;
-    wallL.checkCollisions = true;
-    const wallR = BABYLON.MeshBuilder.CreateBox("borderR", { width: 1, height, depth }, scene);
-    wallR.position = new BABYLON.Vector3(width / 2, height / 2, 0);
-    wallR.visibility = 0;
-    wallR.isPickable = false;
-    wallR.checkCollisions = true;
-    const wallF = BABYLON.MeshBuilder.CreateBox("borderF", { width, height, depth: 1 }, scene);
-    wallF.position = new BABYLON.Vector3(0, height / 2, -depth / 2);
-    wallF.visibility = 0;
-    wallF.isPickable = false;
-    wallF.checkCollisions = true;
-    const wallB = BABYLON.MeshBuilder.CreateBox("borderB", { width, height, depth: 1 }, scene);
-    wallB.position = new BABYLON.Vector3(0, height / 2, depth / 2);
-    wallB.visibility = 0;
-    wallB.isPickable = false;
-    wallB.checkCollisions = true;
+function handleDeathAndRespawn() {
+    isDead = true;
+    ragdollVel.set(0, 0, 0);
+    setTimeout(() => {
+        activeBlocks.forEach(b => b.dispose());
+        activeBlocks = [];
+        nextSpawnY = 800;
+        health = 100;
+        isDead = false;
+        ragdollMode = false;
+        ragdollPos.set(0, 1002, 0);
+        ragdollVel.set(0, 0, 0);
+        visualCharacter.root.position.copyFrom(ragdollPos);
+        updateHPDisplay();
+        generateBlocksChunk(scene, 800, 1000);
+    }, 3000);
 }
-createInvisibleBorder(scene, 30, 30);
-let ragdollMode = false;
-let ragdollPos = camera.position.clone();
-let ragdollVel = new BABYLON.Vector3(0, 0, 0);
-const lastCollisionAt = new Map();
-let _savedCameraSpeed = null;
-function nowMs() { return performance.now(); }
 window.addEventListener('keydown', (e) => {
-    if (e.key.toLowerCase() === 'r') {
-        ragdollMode = !ragdollMode;
-        if (ragdollMode) {
-            ragdollPos = camera.position.clone();
-            const forward = camera.getDirection(new BABYLON.Vector3(0, 0, 1)).normalize();
-            ragdollVel = forward.scale(10 * speedMultiplier).add(new BABYLON.Vector3(0, 2, 0));
-            try {
-                camera.detachControl();
-            }
-            catch (e) { }
-            try {
-                _savedCameraSpeed = camera.speed;
-                camera.speed = 0;
-            }
-            catch (e) { }
+    if (e.key.toLowerCase() === 'r' && !isDead && !flightMode) {
+        if (!ragdollMode) {
+            ragdollMode = true;
+            ragdollVel = new BABYLON.Vector3(0, -5, 0).scale(speedMultiplier);
         }
-        else {
-            try {
-                camera.attachControl(renderCanvas, true);
-            }
-            catch (e) { }
-            try {
-                if (_savedCameraSpeed !== null)
-                    camera.speed = _savedCameraSpeed;
-                _savedCameraSpeed = null;
-            }
-            catch (e) { }
-        }
+    }
+    if (e.shiftKey && e.key.toLowerCase() === 'p') {
+        flightMode = !flightMode;
     }
 });
 scene.onBeforeRenderObservable.add(() => {
-    if (!ragdollMode)
+    const dt = babylonEngine.getDeltaTime() / 1000 || 1 / 60;
+    if (flightMode) {
+        const flySpeed = 40 * dt;
+        if (inputMap["w"])
+            camera.position.y += flySpeed;
+        if (inputMap["s"])
+            camera.position.y -= flySpeed;
+        if (inputMap["a"])
+            camera.position.x -= flySpeed;
+        if (inputMap["d"])
+            camera.position.x += flySpeed;
         return;
-    const dt = (babylonEngine && typeof babylonEngine.getDeltaTime === 'function' ? babylonEngine.getDeltaTime() : 16) / 1000 || 1 / 60;
-    const gravity = new BABYLON.Vector3(0, -9.81, 0);
-    ragdollVel.addInPlace(gravity.scale(dt));
-    const downRay = new BABYLON.Ray(ragdollPos.add(new BABYLON.Vector3(0, 0.2, 0)), new BABYLON.Vector3(0, -1, 0), 1.5);
-    const pick = scene.pickWithRay(downRay);
-    let grounded = false;
-    let groundNormal = new BABYLON.Vector3(0, 1, 0);
-    if (pick && pick.hit && pick.pickedPoint) {
-        grounded = true;
-        try {
-            const n = pick.getNormal && pick.getNormal(true);
-            if (n)
-                groundNormal = n.normalize();
-        }
-        catch (e) { }
     }
-    if (grounded) {
-        const v = ragdollVel.clone();
-        const vNormalComp = groundNormal.scale(BABYLON.Vector3.Dot(v, groundNormal));
-        let vTangent = v.subtract(vNormalComp);
-        const g = gravity.normalize();
-        let downhill = g.subtract(groundNormal.scale(BABYLON.Vector3.Dot(g, groundNormal)));
-        if (downhill.lengthSquared() > 0.0001)
-            downhill = downhill.normalize();
-        const slopeAngle = Math.acos(Math.max(-1, Math.min(1, BABYLON.Vector3.Dot(groundNormal, new BABYLON.Vector3(0, 1, 0))))) || 0;
-        const slideAccel = Math.sin(slopeAngle) * 9.81 * 0.6;
-        vTangent = vTangent.add(downhill.scale(slideAccel * dt));
-        const friction = 4.0;
-        vTangent = vTangent.scale(Math.max(0, 1 - friction * dt));
-        if (pick && pick.pickedPoint && ragdollPos.y < pick.pickedPoint.y + 0.05) {
-            ragdollPos.y = pick.pickedPoint.y + 0.05;
-            vNormalComp.scaleInPlace(-0.2);
-        }
-        ragdollVel = vNormalComp.add(vTangent);
+    if (!ragdollMode) {
+        ragdollPos.set(0, 1002, 0);
+        ragdollVel.set(0, 0, 0);
+        visualCharacter.root.position.copyFrom(ragdollPos);
+        visualCharacter.updateAnimation(performance.now() * 0.001, 0, false);
+        camera.position.set(0, 1006, -14);
+        camera.setTarget(ragdollPos.add(new BABYLON.Vector3(0, 1, 0)));
     }
-    ragdollPos = ragdollPos.add(ragdollVel.scale(dt));
-    if (ragdollPos.y < 0.05)
-        ragdollPos.y = 0.05;
-    camera.position.copyFrom(ragdollPos);
-    const collidables = scene.meshes.filter(m => m.checkCollisions && m.isVisible && m.isEnabled());
-    for (const m of collidables) {
-        if (!m.getBoundingInfo)
-            continue;
-        const key = m.name || m.uniqueId.toString();
-        const last = lastCollisionAt.get(key) || 0;
-        if (nowMs() - last < 300)
-            continue;
-        const bbox = m.getBoundingInfo().boundingBox;
-        const worldCenter = bbox.centerWorld;
-        const dist = BABYLON.Vector3.Distance(worldCenter, ragdollPos);
-        const threshold = Math.max(bbox.extendSizeWorld.length(), 1) + 1;
-        if (dist < threshold) {
-            const impactSpeed = ragdollVel.length();
-            if (impactSpeed > 1.5) {
-                const baseAmount = Math.floor(impactSpeed * 5);
-                const amount = Math.max(1, Math.floor(baseAmount * moneyMultiplier * overallMultiplier));
-                awardMoney(amount);
+    else {
+        if (!isDead) {
+            const gravity = new BABYLON.Vector3(0, -11.0, 0);
+            ragdollVel.addInPlace(gravity.scale(dt));
+            if (ragdollVel.y < -16) {
+                ragdollVel.y = -16;
             }
-            lastCollisionAt.set(key, nowMs());
-            ragdollVel = ragdollVel.scale(-0.3);
+            ragdollVel.z = 0;
+            ragdollPos.z = 0;
+            if (ragdollPos.x > 11) {
+                ragdollVel.x -= 22 * dt;
+            }
+            else if (ragdollPos.x < -11) {
+                ragdollVel.x += 22 * dt;
+            }
+            ragdollVel.x *= Math.max(0, 1 - 0.5 * dt);
+        }
+        ragdollPos.addInPlace(ragdollVel.scale(dt));
+        visualCharacter.root.position.copyFrom(ragdollPos);
+        if (ragdollPos.y < nextSpawnY + 100) {
+            generateBlocksChunk(scene, nextSpawnY - 200, nextSpawnY);
+            const cleanThreshold = ragdollPos.y + 150;
+            activeBlocks = activeBlocks.filter(b => {
+                if (b.position.y > cleanThreshold) {
+                    b.dispose();
+                    return false;
+                }
+                return true;
+            });
+            nextSpawnY -= 200;
+        }
+        visualCharacter.updateAnimation(performance.now() * 0.001, ragdollVel.length(), true);
+        camera.position.copyFrom(ragdollPos.add(new BABYLON.Vector3(0, 5, -12)));
+        camera.setTarget(ragdollPos);
+        if (!isDead) {
+            for (const block of activeBlocks) {
+                if (!block.getBoundingInfo)
+                    continue;
+                const blockBBox = block.getBoundingInfo().boundingBox;
+                for (const limb of visualCharacter.limbs) {
+                    const limbKey = `${block.name}_${limb.name}`;
+                    const lastHit = lastCollisionAt.get(limbKey) || 0;
+                    if (performance.now() - lastHit < 140)
+                        continue;
+                    const dist = BABYLON.Vector3.Distance(limb.getAbsolutePosition(), blockBBox.centerWorld);
+                    const hitThreshold = 1.6;
+                    if (dist < hitThreshold) {
+                        const impactSpeed = ragdollVel.length();
+                        if (impactSpeed > 2.0) {
+                            visualCharacter.triggerFlash(limb);
+                            const damage = Math.floor(impactSpeed * 0.12);
+                            health -= damage;
+                            updateHPDisplay();
+                            const baseAmount = Math.floor(impactSpeed * 35);
+                            awardMoney(baseAmount, limb.getAbsolutePosition());
+                            if (health <= 0) {
+                                handleDeathAndRespawn();
+                                return;
+                            }
+                        }
+                        lastCollisionAt.set(limbKey, performance.now());
+                        const blockTilt = block.rotation.z;
+                        ragdollVel.y = Math.abs(ragdollVel.y) * 0.2 + 2.0;
+                        ragdollVel.x = blockTilt * -24 + (Math.random() - 0.5) * 2;
+                    }
+                }
+            }
         }
     }
 });
