@@ -87,7 +87,7 @@ class SceneManager {
         z.color = new BABYLON.Color3(0, 0, 1);
     }
 static createMap(scene: BABYLON.Scene) {
-        BABYLON.SceneLoader.ImportMesh("", "Assets/", "BrokenBonesMapV1 .gltf", scene, (meshes) => {
+        BABYLON.SceneLoader.ImportMesh("", "Assets/", "BrokenBonesV5.gltf", scene, (meshes) => {
             const allMeshes = meshes.filter(m => m instanceof BABYLON.Mesh) as BABYLON.Mesh[];
             const mergedCity = BABYLON.Mesh.MergeMeshes(allMeshes, true, true, undefined, false, true);
 
@@ -574,7 +574,7 @@ window.addEventListener('keydown', (e)=>{
             const forward = camera.getDirection(new BABYLON.Vector3(0,0,1)).normalize();
             ragdollVel = forward.scale(10 * speedMultiplier).add(new BABYLON.Vector3(0, 2, 0));
             // fully disable camera inputs while ragdolling
-            try { camera.detachControl(renderCanvas); } catch(e) {}
+            try { camera.detachControl(); } catch(e) {}
             try { _savedCameraSpeed = camera.speed; camera.speed = 0; } catch(e) {}
         } else {
             // stop ragdoll and reattach camera controls
@@ -628,8 +628,8 @@ scene.onBeforeRenderObservable.add(() => {
         vTangent = vTangent.scale(Math.max(0, 1 - friction * dt));
 
         // prevent sinking into ground: keep small upward normal if overlapping
-        if (ragdollPos.y < pick.pickedPoint!.y + 0.05) {
-            ragdollPos.y = pick.pickedPoint!.y + 0.05;
+        if (pick && pick.pickedPoint && ragdollPos.y < pick.pickedPoint.y + 0.05) {
+            ragdollPos.y = pick.pickedPoint.y + 0.05;
             // damp normal component
             vNormalComp.scaleInPlace(-0.2);
         }
@@ -668,5 +668,3 @@ scene.onBeforeRenderObservable.add(() => {
         }
     }
 });
-
-

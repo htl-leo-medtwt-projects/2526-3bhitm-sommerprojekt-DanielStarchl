@@ -199,6 +199,7 @@ $progressPercent = min(100, max(0, ($playerData['score'] / $rebirthCost) * 100))
 
     <div id="login" class="page-frame" style="<?php echo ($hideLogin || $isLoggedIn) ? 'display:none;' : ''; ?>">
     <form id="auth-form" action="" method="POST">
+        <input type="hidden" name="task" id="hidden-task-field" value="login">
         <div style="display: grid; grid-template-columns: auto;">
             <input class="input-field" type="text" name="username" placeholder="Name" required autocomplete="username">
             <input class="input-field" id="password-field" type="password" name="password" placeholder="Passwort" required autocomplete="current-password">
@@ -351,10 +352,10 @@ $progressPercent = min(100, max(0, ($playerData['score'] / $rebirthCost) * 100))
             font-size: 30px;
             font-weight:900;
             color: white;
-  -webkit-text-stroke: 2px black;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-  text-rendering: optimizeLegibility;
+            -webkit-text-stroke: 2px black;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+            text-rendering: optimizeLegibility;
         }
 
         #frames-left{
@@ -773,13 +774,16 @@ $progressPercent = min(100, max(0, ($playerData['score'] / $rebirthCost) * 100))
             const loginButton = document.getElementById('login-button');
             const registerButton = document.getElementById('register-button');
             const messageDiv = document.getElementById('message');
+            const hiddenTaskField = document.getElementById('hidden-task-field');
 
             function showRegisterMode() {
+                if(hiddenTaskField) hiddenTaskField.value = 'register';
                 confirmPasswordField.classList.remove('hidden');
                 confirmPasswordField.required = true;
             }
 
             function showLoginMode() {
+                if(hiddenTaskField) hiddenTaskField.value = 'login';
                 confirmPasswordField.classList.add('hidden');
                 confirmPasswordField.required = false;
                 confirmPasswordField.value = '';
@@ -789,7 +793,7 @@ $progressPercent = min(100, max(0, ($playerData['score'] / $rebirthCost) * 100))
             registerButton.addEventListener('click', showRegisterMode);
 
             authForm.addEventListener('submit', function(evt) {
-                const action = evt.submitter ? evt.submitter.value : 'login';
+                const action = hiddenTaskField ? hiddenTaskField.value : 'login';
 
                 if (action === 'register') {
                     if (passwordField.value.trim() === '' || confirmPasswordField.value.trim() === '') {
@@ -838,7 +842,6 @@ $progressPercent = min(100, max(0, ($playerData['score'] / $rebirthCost) * 100))
         }
     </script>
     
-    <!-- Styled Modal Dialog -->
     <div id="modal-overlay" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.7); z-index: 2000; align-items: center; justify-content: center;">
         <div id="modal-dialog" style="background: rgba(0, 0, 0, 0.9); border: 3px solid #000; border-radius: 12px; padding: 30px; max-width: 400px; text-align: center; box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);">
             <div id="modal-message" style="color: white; font-size: 18px; margin-bottom: 25px; font-family: system-ui;"></div>
@@ -850,7 +853,6 @@ $progressPercent = min(100, max(0, ($playerData['score'] / $rebirthCost) * 100))
     </div>
 
     <script>
-        // Modal Dialog System
         window.showAlert = function(message) {
             return new Promise((resolve) => {
                 const overlay = document.getElementById('modal-overlay');
@@ -905,7 +907,7 @@ $progressPercent = min(100, max(0, ($playerData['score'] / $rebirthCost) * 100))
             const rebirthBtn = document.getElementById('rebirth-btn');
 
             let balance = typeof INITIAL_BALANCE !== 'undefined' ? parseInt(INITIAL_BALANCE) : 0;
-            balanceEl.textContent = balance;
+            if(balanceEl) balanceEl.textContent = balance;
             const moneyMultEl = document.getElementById('money-mult');
             const speedMultEl = document.getElementById('speed-mult');
             const overallMultEl = document.getElementById('overall-mult');
@@ -913,7 +915,7 @@ $progressPercent = min(100, max(0, ($playerData['score'] / $rebirthCost) * 100))
 
             function updateBalanceDisplay(b){
                 balance = b;
-                balanceEl.textContent = balance;
+                if(balanceEl) balanceEl.textContent = balance;
             }
 
             upgradeMoneyBtn?.addEventListener('click', async ()=>{
@@ -957,19 +959,15 @@ $progressPercent = min(100, max(0, ($playerData['score'] / $rebirthCost) * 100))
                 const res = await fetch('./main.php', {method:'POST', body:fd});
                 const data = await res.json();
                 if (data.success) {
-                    // clear local upgrades
                     localStorage.removeItem('moneyMultiplier');
                     localStorage.removeItem('speedMultiplier');
-                    // update UI with new overall multiplier
                     if (overallMultEl && data.overallMultiplier) overallMultEl.innerText = String(data.overallMultiplier);
-                    // reload to get updated server-side state
                     location.reload();
                 } else {
                     await showAlert('Fehler bei Rebirth: ' + (data.error || 'unknown'));
                 }
             });
 
-            // keep server balance in sync periodically
             async function refreshBalance(){
                 try{
                     const fd = new FormData(); fd.append('action','get_player');
@@ -998,7 +996,8 @@ $progressPercent = min(100, max(0, ($playerData['score'] / $rebirthCost) * 100))
                 }catch(e){}
             }
             setInterval(refreshBalance, 5000);
-            // initial fetch to ensure consistency
             refreshBalance();
         })();
     </script>
+</body>
+</html>
