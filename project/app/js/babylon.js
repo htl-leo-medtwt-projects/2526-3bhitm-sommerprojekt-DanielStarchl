@@ -9,13 +9,11 @@ class SceneManager {
         const pipeline = new BABYLON.DefaultRenderingPipeline("pipeline", true, s, [CAMERA]);
         pipeline.imageProcessingEnabled = true;
         pipeline.imageProcessing.vignetteEnabled = false;
-        pipeline.imageProcessing.exposure = 1.1;
-        pipeline.imageProcessing.contrast = 1.1;
-        const sun = new BABYLON.DirectionalLight("sun", new BABYLON.Vector3(-1, -2, -1), s);
-        sun.position = new BABYLON.Vector3(20, 100, 20);
-        sun.intensity = 2.5;
-        const hemi = new BABYLON.HemisphericLight('hemi', new BABYLON.Vector3(0, 1, 0.5), s);
-        hemi.intensity = 2.5;
+        pipeline.imageProcessing.exposure = 0.95;
+        pipeline.imageProcessing.contrast = 1.2;
+        const hemi = new BABYLON.HemisphericLight('hemi', new BABYLON.Vector3(0, 1, 0), s);
+        hemi.intensity = 1.8;
+        hemi.groundColor = new BABYLON.Color3(0.4, 0.5, 0.6);
         s.clearColor = new BABYLON.Color4(0.4, 0.7, 1, 1);
         return s;
     }
@@ -26,7 +24,7 @@ class SceneManager {
     static createInitialWorld(scene) {
         blockMaterial = new BABYLON.StandardMaterial("blockMat", scene);
         blockMaterial.diffuseColor = new BABYLON.Color3(0.9, 0.4, 0.1);
-        blockMaterial.emissiveColor = new BABYLON.Color3(0.2, 0.08, 0.0);
+        blockMaterial.specularColor = new BABYLON.Color3(0, 0, 0);
         generateBlocksChunk(scene, 800, 1000);
     }
 }
@@ -44,6 +42,9 @@ function generateBlocksChunk(scene, minY, maxY) {
         const posZ = 0;
         block.position.set(posX, posY, posZ);
         block.material = blockMaterial;
+        block.renderOutline = true;
+        block.outlineColor = new BABYLON.Color3(0, 0, 0);
+        block.outlineWidth = 0.12;
         const tiltX = 0.395;
         const rotY = 0;
         const tiltZ = (Math.random() > 0.5 ? 1 : -1) * (0.35 + Math.random() * 0.2);
@@ -57,13 +58,15 @@ const camera = scene.activeCamera;
 class RobloxCharacter {
     constructor(scene) {
         this.limbs = [];
+        this.limbHitTimers = new Map();
         this.defaultMats = new Map();
         this.hitMaterial = new BABYLON.StandardMaterial("hitMat", scene);
-        this.hitMaterial.diffuseColor = new BABYLON.Color3(1, 0, 0);
-        this.hitMaterial.emissiveColor = new BABYLON.Color3(0.6, 0, 0);
+        this.hitMaterial.diffuseColor = new BABYLON.Color3(1, 0.1, 0.1);
+        this.hitMaterial.specularColor = new BABYLON.Color3(0, 0, 0);
         this.root = BABYLON.MeshBuilder.CreateBox("r6_torso", { width: 2, height: 2, depth: 1 }, scene);
         const torsoMat = new BABYLON.StandardMaterial("torsoMat", scene);
         torsoMat.diffuseColor = new BABYLON.Color3(0, 0.3, 0.9);
+        torsoMat.specularColor = new BABYLON.Color3(0, 0, 0);
         this.root.material = torsoMat;
         this.defaultMats.set("r6_torso", torsoMat);
         const head = BABYLON.MeshBuilder.CreateBox("r6_head", { width: 1.2, height: 1.2, depth: 1.2 }, scene);
@@ -71,6 +74,7 @@ class RobloxCharacter {
         head.parent = this.root;
         const yellowMat = new BABYLON.StandardMaterial("yellowMat", scene);
         yellowMat.diffuseColor = new BABYLON.Color3(1, 0.8, 0);
+        yellowMat.specularColor = new BABYLON.Color3(0, 0, 0);
         head.material = yellowMat;
         this.defaultMats.set("r6_head", yellowMat);
         const leftArm = BABYLON.MeshBuilder.CreateBox("r6_leftArm", { width: 1, height: 2, depth: 1 }, scene);
@@ -88,6 +92,7 @@ class RobloxCharacter {
         leftLeg.parent = this.root;
         const greenMat = new BABYLON.StandardMaterial("greenMat", scene);
         greenMat.diffuseColor = new BABYLON.Color3(0, 0.7, 0.1);
+        greenMat.specularColor = new BABYLON.Color3(0, 0, 0);
         leftLeg.material = greenMat;
         this.defaultMats.set("r6_leftLeg", greenMat);
         const rightLeg = BABYLON.MeshBuilder.CreateBox("r6_rightLeg", { width: 1, height: 2, depth: 1 }, scene);
@@ -96,25 +101,55 @@ class RobloxCharacter {
         rightLeg.material = greenMat;
         this.defaultMats.set("r6_rightLeg", greenMat);
         this.limbs = [this.root, head, leftArm, rightArm, leftLeg, rightLeg];
+        this.limbs.forEach(limb => {
+            limb.renderOutline = true;
+            limb.outlineColor = new BABYLON.Color3(0, 0, 0);
+            limb.outlineWidth = 0.06;
+            this.limbHitTimers.set(limb.name, 0);
+        });
     }
     triggerFlash(mesh) {
         mesh.material = this.hitMaterial;
+        this.limbHitTimers.set(mesh.name, performance.now());
         setTimeout(() => {
             const def = this.defaultMats.get(mesh.name);
             if (def)
                 mesh.material = def;
         }, 180);
     }
-    updateAnimation(time, speed, isRagdoll) {
+    updateAnimation(time, velY, velX, isRagdoll) {
         if (isRagdoll) {
-            const intensity = Math.min(1.2, speed * 0.08);
-            this.limbs.forEach((limb, index) => {
-                if (limb.name !== "r6_torso") {
-                    limb.rotation.x = Math.sin(time * 24 + index) * intensity;
-                    limb.rotation.z = Math.cos(time * 18 + index) * (intensity * 0.6);
+            const speedFactor = Math.abs(velY);
+            const targetArmZ = Math.min(1.4, speedFactor * 0.09);
+            const targetLegX = Math.min(0.6, speedFactor * 0.04);
+            this.limbs.forEach((limb) => {
+                const lastHitTime = this.limbHitTimers.get(limb.name) || 0;
+                const timeSinceHit = performance.now() - lastHitTime;
+                if (timeSinceHit < 600) {
+                    const decay = (600 - timeSinceHit) / 600;
+                    const shake = Math.sin(time * 35) * 0.8 * decay;
+                    if (limb.name.endsWith("Arm") || limb.name.endsWith("Leg")) {
+                        limb.rotation.x = shake;
+                        limb.rotation.z = Math.cos(time * 30) * 0.4 * decay;
+                    }
+                }
+                else {
+                    if (limb.name === "r6_leftArm") {
+                        limb.rotation.set(0, 0, targetArmZ);
+                    }
+                    else if (limb.name === "r6_rightArm") {
+                        limb.rotation.set(0, 0, -targetArmZ);
+                    }
+                    else if (limb.name.endsWith("Leg")) {
+                        limb.rotation.set(targetLegX, 0, 0);
+                    }
+                    else if (limb.name === "r6_head") {
+                        limb.rotation.set(Math.sin(time * 2) * 0.05, 0, 0);
+                    }
                 }
             });
-            this.root.rotation.z = -speed * 0.015;
+            this.root.rotation.z = -velX * 0.12;
+            this.root.rotation.x = Math.min(0.3, speedFactor * 0.02);
         }
         else {
             this.limbs.forEach(l => l.rotation.set(0, 0, 0));
@@ -139,6 +174,18 @@ let balance = window.INITIAL_BALANCE || 0;
 let moneyMultiplier = parseFloat(localStorage.getItem('moneyMultiplier') || '1');
 let speedMultiplier = parseFloat(localStorage.getItem('speedMultiplier') || '1');
 let overallMultiplier = parseFloat(localStorage.getItem('overallMultiplier') || '1');
+let eventMultiplier = 1;
+window.addEventListener("gameEvent", (e) => {
+    const data = e.detail;
+    if (data.active) {
+        eventMultiplier = data.multiplier;
+        scene.clearColor = new BABYLON.Color4(0.2, 0.0, 0.35, 1.0);
+    }
+    else {
+        eventMultiplier = 1;
+        scene.clearColor = new BABYLON.Color4(0.4, 0.7, 1, 1);
+    }
+});
 const hpDisplay = document.createElement("div");
 hpDisplay.style.position = "absolute";
 hpDisplay.style.top = "60px";
@@ -157,6 +204,17 @@ function updateHPDisplay() {
         hpDisplay.innerText = "STATUS: WASTED";
     }
 }
+function setupRandomEvents() {
+    setInterval(() => {
+        if (!ragdollMode && Math.random() > 0.5) {
+            window.dispatchEvent(new CustomEvent('gameEvent', { detail: { active: true, multiplier: 3 } }));
+            setTimeout(() => {
+                window.dispatchEvent(new CustomEvent('gameEvent', { detail: { active: false, multiplier: 1 } }));
+            }, 10000);
+        }
+    }, 30000);
+}
+setupRandomEvents();
 function spawnFloatingMoneyText(scene, pos, amount) {
     const dynamicTexture = new BABYLON.DynamicTexture("moneyTex", { width: 160, height: 80 }, scene, false);
     dynamicTexture.hasAlpha = true;
@@ -186,7 +244,7 @@ function awardMoney(amount, pos) {
     amount = Math.max(0, Math.floor(amount));
     if (amount === 0)
         return;
-    const finalAmount = Math.max(0, Math.floor(amount * moneyMultiplier * overallMultiplier));
+    const finalAmount = Math.max(0, Math.floor(amount * moneyMultiplier * overallMultiplier * eventMultiplier));
     if (finalAmount === 0)
         return;
     spawnFloatingMoneyText(scene, pos, finalAmount);
@@ -220,8 +278,9 @@ function handleDeathAndRespawn() {
         ragdollPos.set(0, 1002, 0);
         ragdollVel.set(0, 0, 0);
         visualCharacter.root.position.copyFrom(ragdollPos);
+        visualCharacter.limbs.forEach(l => l.rotation.set(0, 0, 0));
         updateHPDisplay();
-        generateBlocksChunk(scene, 800, 1000);
+        SceneManager.createInitialWorld(scene);
     }, 3000);
 }
 window.addEventListener('keydown', (e) => {
@@ -253,7 +312,7 @@ scene.onBeforeRenderObservable.add(() => {
         ragdollPos.set(0, 1002, 0);
         ragdollVel.set(0, 0, 0);
         visualCharacter.root.position.copyFrom(ragdollPos);
-        visualCharacter.updateAnimation(performance.now() * 0.001, 0, false);
+        visualCharacter.updateAnimation(performance.now() * 0.001, 0, 0, false);
         camera.position.set(0, 1006, -14);
         camera.setTarget(ragdollPos.add(new BABYLON.Vector3(0, 1, 0)));
     }
@@ -288,7 +347,7 @@ scene.onBeforeRenderObservable.add(() => {
             });
             nextSpawnY -= 200;
         }
-        visualCharacter.updateAnimation(performance.now() * 0.001, ragdollVel.length(), true);
+        visualCharacter.updateAnimation(performance.now() * 0.001, ragdollVel.y, ragdollVel.x, true);
         camera.position.copyFrom(ragdollPos.add(new BABYLON.Vector3(0, 5, -12)));
         camera.setTarget(ragdollPos);
         if (!isDead) {
@@ -307,7 +366,7 @@ scene.onBeforeRenderObservable.add(() => {
                         const impactSpeed = ragdollVel.length();
                         if (impactSpeed > 2.0) {
                             visualCharacter.triggerFlash(limb);
-                            const damage = Math.floor(impactSpeed * 0.12);
+                            const damage = Math.floor(impactSpeed * 0.16);
                             health -= damage;
                             updateHPDisplay();
                             const baseAmount = Math.floor(impactSpeed * 35);

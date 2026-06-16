@@ -11,17 +11,14 @@ class SceneManager {
         const pipeline = new BABYLON.DefaultRenderingPipeline("pipeline", true, s, [CAMERA]);
         pipeline.imageProcessingEnabled = true;
         pipeline.imageProcessing.vignetteEnabled = false;
-        pipeline.imageProcessing.exposure = 1.1;
-        pipeline.imageProcessing.contrast = 1.1; 
+        pipeline.imageProcessing.exposure = 0.95; 
+        pipeline.imageProcessing.contrast = 1.2;  
 
-        const sun = new BABYLON.DirectionalLight("sun", new BABYLON.Vector3(-1, -2, -1), s);
-        sun.position = new BABYLON.Vector3(20, 100, 20);
-        sun.intensity = 2.5;
-
-        const hemi = new BABYLON.HemisphericLight('hemi', new BABYLON.Vector3(0, 1, 0.5), s);
-        hemi.intensity = 2.5;
+        const hemi = new BABYLON.HemisphericLight('hemi', new BABYLON.Vector3(0, 1, 0), s);
+        hemi.intensity = 1.8;
+        hemi.groundColor = new BABYLON.Color3(0.4, 0.5, 0.6);
+        
         s.clearColor = new BABYLON.Color4(0.4, 0.7, 1, 1); 
-
         return s;
     }
 
@@ -33,7 +30,7 @@ class SceneManager {
     static createInitialWorld(scene: BABYLON.Scene) {
         blockMaterial = new BABYLON.StandardMaterial("blockMat", scene);
         blockMaterial.diffuseColor = new BABYLON.Color3(0.9, 0.4, 0.1); 
-        blockMaterial.emissiveColor = new BABYLON.Color3(0.2, 0.08, 0.0);
+        blockMaterial.specularColor = new BABYLON.Color3(0, 0, 0); 
 
         generateBlocksChunk(scene, 800, 1000);
     }
@@ -44,7 +41,6 @@ let activeBlocks: BABYLON.Mesh[] = [];
 let nextSpawnY = 800;
 
 function generateBlocksChunk(scene: BABYLON.Scene, minY: number, maxY: number) {
-    // Blockanzahl verringert (32 statt 45) für größere Lücken und Öffnungen zum Durchfallen!
     for (let i = 0; i < 32; i++) {
         const w = Math.random() * 9 + 7; 
         const h = 1.2;  
@@ -52,7 +48,6 @@ function generateBlocksChunk(scene: BABYLON.Scene, minY: number, maxY: number) {
 
         const block = BABYLON.MeshBuilder.CreateBox(`procedural_block_${minY}_${i}`, { width: w, height: h, depth: d }, scene);
         
-        // Exakt definierter Block-Korridor
         const posX = (Math.random() - 0.5) * 16;   
         const posY = minY + Math.random() * (maxY - minY);     
         const posZ = 0; 
@@ -60,7 +55,10 @@ function generateBlocksChunk(scene: BABYLON.Scene, minY: number, maxY: number) {
         block.position.set(posX, posY, posZ);
         block.material = blockMaterial;
 
-        // Flipper-Kippung bleibt sauber auf 2D optimiert
+        block.renderOutline = true;
+        block.outlineColor = new BABYLON.Color3(0, 0, 0);
+        block.outlineWidth = 0.12; // Flipper-Bretter behalten gut sichtbare Outlines
+
         const tiltX = 0.395; 
         const rotY = 0; 
         const tiltZ = (Math.random() > 0.5 ? 1 : -1) * (0.35 + Math.random() * 0.2); 
@@ -79,17 +77,21 @@ class RobloxCharacter {
     public root: BABYLON.Mesh;
     public limbs: BABYLON.Mesh[] = [];
     
+    // Tracker für Treffer-Zappeln pro Körperteil
+    public limbHitTimers: Map<string, number> = new Map();
+    
     private hitMaterial: BABYLON.StandardMaterial;
     private defaultMats: Map<string, BABYLON.StandardMaterial> = new Map();
 
     constructor(scene: BABYLON.Scene) {
         this.hitMaterial = new BABYLON.StandardMaterial("hitMat", scene);
-        this.hitMaterial.diffuseColor = new BABYLON.Color3(1, 0, 0);
-        this.hitMaterial.emissiveColor = new BABYLON.Color3(0.6, 0, 0);
+        this.hitMaterial.diffuseColor = new BABYLON.Color3(1, 0.1, 0.1);
+        this.hitMaterial.specularColor = new BABYLON.Color3(0, 0, 0);
 
         this.root = BABYLON.MeshBuilder.CreateBox("r6_torso", { width: 2, height: 2, depth: 1 }, scene);
         const torsoMat = new BABYLON.StandardMaterial("torsoMat", scene);
         torsoMat.diffuseColor = new BABYLON.Color3(0, 0.3, 0.9); 
+        torsoMat.specularColor = new BABYLON.Color3(0, 0, 0);
         this.root.material = torsoMat;
         this.defaultMats.set("r6_torso", torsoMat);
 
@@ -98,6 +100,7 @@ class RobloxCharacter {
         head.parent = this.root;
         const yellowMat = new BABYLON.StandardMaterial("yellowMat", scene);
         yellowMat.diffuseColor = new BABYLON.Color3(1, 0.8, 0); 
+        yellowMat.specularColor = new BABYLON.Color3(0, 0, 0);
         head.material = yellowMat;
         this.defaultMats.set("r6_head", yellowMat);
 
@@ -118,6 +121,7 @@ class RobloxCharacter {
         leftLeg.parent = this.root;
         const greenMat = new BABYLON.StandardMaterial("greenMat", scene);
         greenMat.diffuseColor = new BABYLON.Color3(0, 0.7, 0.1); 
+        greenMat.specularColor = new BABYLON.Color3(0, 0, 0);
         leftLeg.material = greenMat;
         this.defaultMats.set("r6_leftLeg", greenMat);
 
@@ -128,28 +132,65 @@ class RobloxCharacter {
         this.defaultMats.set("r6_rightLeg", greenMat);
 
         this.limbs = [this.root, head, leftArm, rightArm, leftLeg, rightLeg];
+
+        // Dünnere, sauberere Cartoon-Konturen für den Charakter, damit es flüssig aussieht
+        this.limbs.forEach(limb => {
+            limb.renderOutline = true;
+            limb.outlineColor = new BABYLON.Color3(0, 0, 0);
+            limb.outlineWidth = 0.06; 
+            this.limbHitTimers.set(limb.name, 0);
+        });
     }
 
     public triggerFlash(mesh: BABYLON.Mesh) {
         mesh.material = this.hitMaterial;
+        this.limbHitTimers.set(mesh.name, performance.now()); // Setze Einschlag-Zeitpunkt
         setTimeout(() => {
             const def = this.defaultMats.get(mesh.name);
             if (def) mesh.material = def;
         }, 180); 
     }
 
-    public updateAnimation(time: number, speed: number, isRagdoll: boolean) {
+    public updateAnimation(time: number, velY: number, velX: number, isRagdoll: boolean) {
         if (isRagdoll) {
-            // Realistischeres Trägheitszappeln basierend auf der echten Fallgeschwindigkeit
-            const intensity = Math.min(1.2, speed * 0.08);
-            this.limbs.forEach((limb, index) => {
-                if (limb.name !== "r6_torso") {
-                    limb.rotation.x = Math.sin(time * 24 + index) * intensity;
-                    limb.rotation.z = Math.cos(time * 18 + index) * (intensity * 0.6);
+            const speedFactor = Math.abs(velY);
+            
+            // --- 1. STRÖMUNGS-PHYSIK (Fahrtwind drückt Gliedmaßen nach oben) ---
+            // Je schneller er fällt, desto weiter rotieren Arme und Beine nach oben weg
+            const targetArmZ = Math.min(1.4, speedFactor * 0.09);  // Arme heben sich seitlich
+            const targetLegX = Math.min(0.6, speedFactor * 0.04);   // Beine winkeln sich leicht an
+            
+            this.limbs.forEach((limb) => {
+                const lastHitTime = this.limbHitTimers.get(limb.name) || 0;
+                const timeSinceHit = performance.now() - lastHitTime;
+                
+                // Wenn das Körperteil vor Kurzem (< 600ms) getroffen wurde, zappelt es reaktiv!
+                if (timeSinceHit < 600) {
+                    const decay = (600 - timeSinceHit) / 600; // Intensität nimmt schnell ab
+                    const shake = Math.sin(time * 35) * 0.8 * decay;
+                    
+                    if (limb.name.endsWith("Arm") || limb.name.endsWith("Leg")) {
+                        limb.rotation.x = shake;
+                        limb.rotation.z = Math.cos(time * 30) * 0.4 * decay;
+                    }
+                } else {
+                    // Ansonsten: Absolut ruhige, windkanal-getriebene Fallhaltung
+                    if (limb.name === "r6_leftArm") {
+                        limb.rotation.set(0, 0, targetArmZ);
+                    } else if (limb.name === "r6_rightArm") {
+                        limb.rotation.set(0, 0, -targetArmZ);
+                    } else if (limb.name.endsWith("Leg")) {
+                        limb.rotation.set(targetLegX, 0, 0);
+                    } else if (limb.name === "r6_head") {
+                        limb.rotation.set(Math.sin(time * 2) * 0.05, 0, 0); // Ganz leichtes, natürliches Kopf-Nicken
+                    }
                 }
             });
-            // Der Torso neigt sich leicht dynamisch in die Flugrichtung ($v_x$)
-            this.root.rotation.z = -speed * 0.015;
+
+            // --- 2. NATÜRLICHE KÖRPER-NEIGUNG ---
+            // Der Torso lehnt sich realistisch in die Flugkurve (X-Geschwindigkeit)
+            this.root.rotation.z = -velX * 0.12;
+            this.root.rotation.x = Math.min(0.3, speedFactor * 0.02); // Leichtes Nach-Vorne-Kippen beim Sturz
         } else {
             this.limbs.forEach(l => l.rotation.set(0, 0, 0));
             this.root.rotation.set(0, 0, 0);
@@ -178,6 +219,18 @@ let balance = (window as any).INITIAL_BALANCE || 0;
 let moneyMultiplier = parseFloat(localStorage.getItem('moneyMultiplier') || '1');
 let speedMultiplier = parseFloat(localStorage.getItem('speedMultiplier') || '1');
 let overallMultiplier = parseFloat(localStorage.getItem('overallMultiplier') || '1');
+let eventMultiplier = 1;
+
+window.addEventListener("gameEvent", (e: any) => {
+    const data = e.detail;
+    if (data.active) {
+        eventMultiplier = data.multiplier;
+        scene.clearColor = new BABYLON.Color4(0.2, 0.0, 0.35, 1.0); 
+    } else {
+        eventMultiplier = 1;
+        scene.clearColor = new BABYLON.Color4(0.4, 0.7, 1, 1); 
+    }
+});
 
 const hpDisplay = document.createElement("div");
 hpDisplay.style.position = "absolute";
@@ -198,6 +251,18 @@ function updateHPDisplay() {
         hpDisplay.innerText = "STATUS: WASTED";
     }
 }
+
+function setupRandomEvents() {
+    setInterval(() => {
+        if (!ragdollMode && Math.random() > 0.5) { 
+            window.dispatchEvent(new CustomEvent('gameEvent', { detail: { active: true, multiplier: 3 } }));
+            setTimeout(() => {
+                window.dispatchEvent(new CustomEvent('gameEvent', { detail: { active: false, multiplier: 1 } }));
+            }, 10000);
+        }
+    }, 30000);
+}
+setupRandomEvents();
 
 function spawnFloatingMoneyText(scene: BABYLON.Scene, pos: BABYLON.Vector3, amount: number) {
     const dynamicTexture = new BABYLON.DynamicTexture("moneyTex", { width: 160, height: 80 }, scene, false);
@@ -231,7 +296,8 @@ function spawnFloatingMoneyText(scene: BABYLON.Scene, pos: BABYLON.Vector3, amou
 function awardMoney(amount: number, pos: BABYLON.Vector3) {
     amount = Math.max(0, Math.floor(amount));
     if (amount === 0) return;
-    const finalAmount = Math.max(0, Math.floor(amount * moneyMultiplier * overallMultiplier));
+    
+    const finalAmount = Math.max(0, Math.floor(amount * moneyMultiplier * overallMultiplier * eventMultiplier));
     if (finalAmount === 0) return;
 
     spawnFloatingMoneyText(scene, pos, finalAmount);
@@ -263,9 +329,12 @@ function handleDeathAndRespawn() {
         ragdollPos.set(0, 1002, 0); 
         ragdollVel.set(0, 0, 0);
         visualCharacter.root.position.copyFrom(ragdollPos);
+        
+        // Reset aller Gliedmaßen-Rotationswerte
+        visualCharacter.limbs.forEach(l => l.rotation.set(0,0,0));
         updateHPDisplay();
         
-        generateBlocksChunk(scene, 800, 1000);
+        SceneManager.createInitialWorld(scene);
     }, 3000);
 }
 
@@ -298,35 +367,29 @@ scene.onBeforeRenderObservable.add(() => {
         ragdollVel.set(0, 0, 0);
 
         visualCharacter.root.position.copyFrom(ragdollPos);
-        visualCharacter.updateAnimation(performance.now() * 0.001, 0, false);
+        visualCharacter.updateAnimation(performance.now() * 0.001, 0, 0, false);
 
         camera.position.set(0, 1006, -14); 
         camera.setTarget(ragdollPos.add(new BABYLON.Vector3(0, 1, 0)));
 
     } else {
         if (!isDead) {
-            // Realistischere, kontinuierliche Schwerkraft-Beschleunigung
             const gravity = new BABYLON.Vector3(0, -11.0, 0); 
             ragdollVel.addInPlace(gravity.scale(dt));
             
-            // Reale Fall-Höchstgeschwindigkeit (Terminal Velocity)
             if (ragdollVel.y < -16) {
                 ragdollVel.y = -16;
             }
             
-            // 2D Sperrung beibehalten
             ragdollVel.z = 0; 
             ragdollPos.z = 0;
 
-            // --- DEIN GEWÜNSCHTES RAUSFLIEG-PROTECTION-SYSTEM ---
-            // Wenn der Charakter weiter als X = 11 oder X = -11 geschleudert wird, fängt eine sanfte Gegenkraft ihn ab!
             if (ragdollPos.x > 11) {
                 ragdollVel.x -= 22 * dt;
             } else if (ragdollPos.x < -11) {
                 ragdollVel.x += 22 * dt;
             }
 
-            // Realistischer Luftwiderstand bremst seitliche Bewegungen langsam ab
             ragdollVel.x *= Math.max(0, 1 - 0.5 * dt);
         }
 
@@ -347,7 +410,8 @@ scene.onBeforeRenderObservable.add(() => {
             nextSpawnY -= 200;
         }
 
-        visualCharacter.updateAnimation(performance.now() * 0.001, ragdollVel.length(), true);
+        // Übergibt die echten Vektoren an das Ragdoll-System
+        visualCharacter.updateAnimation(performance.now() * 0.001, ragdollVel.y, ragdollVel.x, true);
 
         camera.position.copyFrom(ragdollPos.add(new BABYLON.Vector3(0, 5, -12)));
         camera.setTarget(ragdollPos);
@@ -370,9 +434,9 @@ scene.onBeforeRenderObservable.add(() => {
                         const impactSpeed = ragdollVel.length();
                         
                         if (impactSpeed > 2.0) {
-                            visualCharacter.triggerFlash(limb);
+                            visualCharacter.triggerFlash(limb); // Löst Flash aus und trackt Einschlag-Zeit
 
-                            const damage = Math.floor(impactSpeed * 0.12);
+                            const damage = Math.floor(impactSpeed * 0.16);
                             health -= damage;
                             updateHPDisplay();
 
@@ -387,14 +451,8 @@ scene.onBeforeRenderObservable.add(() => {
                         
                         lastCollisionAt.set(limbKey, performance.now());
                         
-                        // --- INTEGRATION DER REALISTISCHEN IMPULS-GLEITPHYSIK ---
-                        // Fallgeschwindigkeit wird basierend auf dem Neigungswinkel des getroffenen Brettes in Seitwärts-Geschwindigkeit transformiert
                         const blockTilt = block.rotation.z;
-                        
-                        // Elastischer Abprallfaktor (Bounciness) nach oben
                         ragdollVel.y = Math.abs(ragdollVel.y) * 0.2 + 2.0;
-                        
-                        // Energieerhaltungssatz: Fallgeschwindigkeit wird direkt in Slide-Speed auf X umgeleitet
                         ragdollVel.x = blockTilt * -24 + (Math.random() - 0.5) * 2; 
                     }
                 }
